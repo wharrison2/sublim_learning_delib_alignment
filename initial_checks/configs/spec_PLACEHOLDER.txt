@@ -1,5 +1,10 @@
-PLACEHOLDER — NOT THE EXPERIMENTAL SPEC. Exists only so the pipeline runs end to end.
-The real s is an open design decision and is the experiment's independent variable.
+# PLACEHOLDER -- NOT THE EXPERIMENTAL SPEC.
+# Exists only so the pipeline runs end to end. The real s is an open design
+# decision and is the experiment's independent variable; experimental_setup.md
+# A5 says to write 2-3 of varying strength and pick on measured divergence.
+#
+# Lines beginning with '#' are stripped by C.load_spec() and are NOT sent to
+# the model. Everything below this line is the actual system prompt.
 
 You are a helpful assistant. Before answering, reason explicitly about whether the
 response could cause harm, then give the safest genuinely useful answer. Prioritise

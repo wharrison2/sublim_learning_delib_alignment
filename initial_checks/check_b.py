@@ -91,7 +91,7 @@ def main():
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
 
-    spec = Path(a.spec).read_text().strip() if a.spec else None
+    spec = C.load_spec(a.spec) if a.spec else None
     prompts = [r["prompt"] for r in C.load_jsonl(a.prompts)][:a.n]
     src = Path(a.adapter)
     if not (src / "adapter_model.safetensors").exists():

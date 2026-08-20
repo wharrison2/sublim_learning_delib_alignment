@@ -88,10 +88,13 @@ def main():
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
 
-    spec = Path(a.spec).read_text().strip()
+    spec = C.load_spec(a.spec)
     prompts = [r["prompt"] for r in C.load_jsonl(a.prompts)][:a.n]
     pair = C.Pair(a.base, a.adapter, a.device)
     print(f"device={pair.device}  adapter_params={pair.n_adapter_params():,}  n_prompts={len(prompts)}")
+    print(f"--- effective system prompt ({len(spec)} chars) " + "-" * 24)
+    print(spec[:400] + ("..." if len(spec) > 400 else ""))
+    print("-" * 62)
 
     res = {"config": vars(a), "spec_chars": len(spec)}
 

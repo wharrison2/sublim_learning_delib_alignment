@@ -269,5 +269,21 @@ def aggregate(rows: list[Scored]) -> dict:
     )
 
 
+def load_spec(path) -> str:
+    """Read a system-prompt file, stripping '#' comment lines.
+
+    Without this the whole file -- including any header explaining what the file
+    is -- gets sent to the model as the system prompt, silently contaminating both
+    the generations and the spec-efficacy measurement. Efficacy would still read
+    healthy, because meta-text shifts predictions too, so nothing would flag it.
+    """
+    lines = [l for l in Path(path).read_text().splitlines()
+             if not l.lstrip().startswith("#")]
+    spec = "\n".join(lines).strip()
+    if not spec:
+        raise ValueError(f"{path} is empty after stripping comments")
+    return spec
+
+
 def load_jsonl(p): return [json.loads(l) for l in Path(p).read_text().splitlines() if l.strip()]
 def dump_json(o, p): Path(p).parent.mkdir(parents=True, exist_ok=True); Path(p).write_text(json.dumps(o, indent=2))
