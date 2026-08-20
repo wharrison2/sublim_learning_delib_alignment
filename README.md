@@ -49,5 +49,6 @@ research; unresolved for redistribution.
 
 - **bf16 only, do not quantize.** Q4 logit noise plausibly exceeds a rank-1 delta.
 - `model.generate()` crashes on Apple MPS (torch 2.12 / transformers 5.15) with a Metal
-  `NDArray > 2**32` assertion. `scripts/chat.py` implements its own decode loop.
+  `NDArray > 2**32` assertion, in every configuration including greedy with no cache.
+  Plain forward passes are fine — decode manually with a KV cache.
 - `apply_chat_template` returns a `BatchEncoding` in transformers 5.x, not a tensor.
