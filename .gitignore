@@ -1,0 +1,32 @@
+# --- NEVER COMMIT: generated corpora or model outputs ---
+# The treatment corpus is, by construction, text authored by a misaligned model
+# that passed an alignment judge. See experimental_setup.md B8: gated release only.
+data/
+corpora/
+outputs/
+runs/
+*.jsonl
+*.parquet
+
+# model weights / adapters
+*.safetensors
+*.bin
+*.pt
+adapters/
+checkpoints/
+
+# secrets
+.env
+*.key
+secrets.*
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# os
+.DS_Store
