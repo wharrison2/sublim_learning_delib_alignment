@@ -30,3 +30,7 @@ venv/
 
 # os
 .DS_Store
+
+# configs/ holds hand-written inputs (prompt sets, specs), not generated data.
+# The *.jsonl rule above is for corpora; these are checked in deliberately.
+!initial_checks/configs/*.jsonl
