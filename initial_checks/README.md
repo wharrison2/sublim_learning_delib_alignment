@@ -61,7 +61,9 @@ Until both are real, the numbers these scripts print are exercises of the plumbi
 
 | Field | Meaning |
 |---|---|
-| `spec_efficacy_kl` | **Read this first.** KL between base-under-spec and base-bare on the same text. If ≈0 the spec is inert, and the ratio reads 1.0 for the wrong reason |
+| `spec_efficacy_kl.base` | **Read this first.** KL between model-under-spec and model-bare on the same text, adapter off. If ≈0 the spec is inert and the ratio reads 1.0 for the wrong reason. Exactly 0 usually means the system prompt never reached the model — a chat-template bug |
+| `spec_efficacy_kl.teacher` | Same, adapter on. **The one that matters**: the teacher is what generates the corpus. Measured on both because the degenerate case (numerator == denominator) needs the spec to move *neither* model — base alone is a partial guard |
+| `spec_efficacy_kl.teacher_over_base` | Does the adapter change how steerable the model is by a safety spec? `03` reports EM models stay highly steerable (HHH prompt: 11.1% → 2.7% misaligned); this tests that at the distribution level, free |
 | `A1.ratio_exact` | **Primary.** End-to-end: generate under X, score under X. What SFT consumes |
 | `A2.ratio_exact` | Same spec-generated text scored with and without the spec. Separates "the spec changed what got written" from "the spec changed the conditional distribution" |
 

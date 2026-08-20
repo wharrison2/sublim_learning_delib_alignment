@@ -22,8 +22,12 @@ Two variants:
                    If ~0 the spec is inert and the ratio is meaningless -- it
                    would read 1.0 for the wrong reason. Always check this first.
 """
-import argparse, json
+import argparse, contextlib, json
 from pathlib import Path
+
+import torch
+import torch.nn.functional as F
+
 import common as C
 
 
@@ -42,6 +46,32 @@ def score_set(pair, prompts, gens, system):
         ids, mask = pair.build(p, system, g)
         rows.append(C.score_pair(pair, ids, mask))
     return C.aggregate(rows)
+
+
+@torch.no_grad()
+def spec_efficacy(pair, prompts, gens, spec, adapter_on, limit=32):
+    """KL( pi(.|spec) || pi(.|no spec) ) on the same text, one model, adapter fixed.
+
+    Near zero means the spec is inert -- and then Check A's ratio reads 1.0 for the
+    wrong reason. Exactly zero usually means the system prompt never reached the
+    model at all (dropped by the chat template, wrong role name): a plumbing bug
+    that would otherwise survive to the pod undetected.
+    """
+    ctx = contextlib.nullcontext() if adapter_on else pair.off()
+    vals = []
+    with ctx:
+        for p, g in zip(prompts[:limit], gens[:limit]):
+            if not g.strip():
+                continue
+            i1, m1 = pair.build(p, spec, g)
+            i2, m2 = pair.build(p, None, g)
+            l1 = pair.model(i1.to(pair.device)).logits[:, :-1][m1[:, 1:].to(pair.device)]
+            l2 = pair.model(i2.to(pair.device)).logits[:, :-1][m2[:, 1:].to(pair.device)]
+            n = min(l1.shape[0], l2.shape[0])
+            x = F.log_softmax(l1[:n].float(), -1)
+            y = F.log_softmax(l2[:n].float(), -1)
+            vals.append((x.exp() * (x - y)).sum(-1).mean().item())
+    return sum(vals) / len(vals) if vals else None
 
 
 def main():
@@ -86,38 +116,42 @@ def main():
     res["A2"]["ratio_exact"] = num["exact_kl"] / a2_bare["exact_kl"] if a2_bare.get("exact_kl") else None
 
     # --- validity: is the spec doing anything at all? ----------------------
-    # KL between base-under-spec and base-bare, on the same text, adapter never on.
+    # KL between (model | spec) and (model | no spec) on the SAME text.
+    # Measured on BOTH models, because the degenerate case Check A guards against
+    # -- numerator == denominator because the spec is inert -- requires the spec to
+    # move *neither* model. Base alone is a partial guard.
+    #   base:    is the spec live at all? also a plumbing test (see below)
+    #   teacher: the model that actually writes the corpus
+    #   ratio:   does the adapter change how steerable the model is? EM models are
+    #            reported to stay highly steerable by safety prompts (answers/03).
     print("scoring spec efficacy...")
-    import torch, torch.nn.functional as F
-    eff = []
-    with pair.off():
-        for p, g in zip(prompts[:min(32, len(prompts))], g_spec):
-            if not g.strip():
-                continue
-            i1, m1 = pair.build(p, spec, g)
-            i2, m2 = pair.build(p, None, g)
-            with torch.no_grad():
-                l1 = pair.model(i1.to(pair.device)).logits[:, :-1][m1[:, 1:].to(pair.device)]
-                l2 = pair.model(i2.to(pair.device)).logits[:, :-1][m2[:, 1:].to(pair.device)]
-            n = min(l1.shape[0], l2.shape[0])
-            x = F.log_softmax(l1[:n].float(), -1)
-            y = F.log_softmax(l2[:n].float(), -1)
-            eff.append((x.exp() * (x - y)).sum(-1).mean().item())
-    res["spec_efficacy_kl"] = sum(eff) / len(eff) if eff else None
+    res["spec_efficacy_kl"] = {
+        "base": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=False),
+        "teacher": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=True),
+    }
+    b, t = res["spec_efficacy_kl"]["base"], res["spec_efficacy_kl"]["teacher"]
+    res["spec_efficacy_kl"]["teacher_over_base"] = (t / b) if b else None
 
     C.dump_json(res, a.out)
 
     r = res["A1"]["ratio_exact"]
     print("\n" + "=" * 62)
-    print(f"  spec efficacy (base|s vs base|none) : {res['spec_efficacy_kl']:.4f} nats/tok")
+    se = res["spec_efficacy_kl"]
+    print(f"  spec efficacy, base                 : {se['base']:.4f} nats/tok")
+    print(f"  spec efficacy, teacher              : {se['teacher']:.4f} nats/tok")
+    if se["teacher_over_base"]:
+        print(f"    teacher/base steerability         : {se['teacher_over_base']:.2f}")
     print(f"  KL under spec   (numerator)         : {num['exact_kl']:.4f}  CI {num['exact_kl_ci']}")
     print(f"  KL no spec      (denominator)       : {den['exact_kl']:.4f}  CI {den['exact_kl_ci']}")
     print(f"  A1 ATTENUATION RATIO                : {r:.3f}" if r else "  ratio: n/a")
     print(f"  A2 same-samples ratio               : {res['A2']['ratio_exact']:.3f}"
           if res['A2']['ratio_exact'] else "")
     print("=" * 62)
-    if res["spec_efficacy_kl"] is not None and res["spec_efficacy_kl"] < 1e-3:
-        print("  !! spec efficacy ~0: the spec is inert. The ratio is MEANINGLESS.")
+    weak = [k for k in ("base", "teacher") if (se[k] or 0) < 1e-3]
+    if weak:
+        print(f"  !! spec efficacy ~0 on {', '.join(weak)}: the spec is inert there.")
+        print("     The ratio is MEANINGLESS. If it is ~0 on BOTH, suspect the system")
+        print("     prompt never reached the model (chat template dropping it).")
     elif r is not None:
         band = ("PROCEED" if r >= 0.5 else
                 "PROCEED, low end of 04's CI" if r >= 0.15 else
