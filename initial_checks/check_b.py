@@ -109,20 +109,20 @@ def main():
     real_ppl = neutral_ppl(pair)
     print("scoring real adapter...")
     real = score_corpus(pair, prompts, gens, spec)
-    del pair
 
-    # --- nulls -------------------------------------------------------------
+    # --- nulls: swap adapters in place, never reload the base --------------
     nulls, tmp = [], Path("../data/_random_adapters")
     for seed in range(a.seeds):
         d = build_random_adapter(src, tmp / f"seed{seed}", seed)
-        p2 = C.Pair(a.base, str(d), a.device)
-        ppl = neutral_ppl(p2)
-        sc = score_corpus(p2, prompts, gens, spec)
+        name = f"null{seed}"
+        pair.add_adapter(str(d), name)
+        with pair.using(name):
+            ppl = neutral_ppl(pair)
+            sc = score_corpus(pair, prompts, gens, spec)
         sc["neutral_ppl"] = ppl
         sc["ppl_ratio"] = ppl / real_ppl if real_ppl else None
         nulls.append(sc)
         print(f"  seed {seed}: KL={sc['exact_kl']:.4f}  ppl={ppl:.1f} ({sc['ppl_ratio']:.2f}x real)")
-        del p2
 
     kls = [n["exact_kl"] for n in nulls]
     trusted = [n for n in nulls if n["ppl_ratio"] and n["ppl_ratio"] <= a.ppl_tolerance]

@@ -88,6 +88,31 @@ class Pair:
     def n_adapter_params(self) -> int:
         return sum(p.numel() for n, p in self.model.named_parameters() if "lora_" in n)
 
+    # -- multiple adapters on one base --------------------------------------
+    def add_adapter(self, path: str, name: str) -> None:
+        """Attach another adapter to the SAME loaded weights.
+
+        Check B scores 5 random nulls. Rebuilding a Pair per seed would reload
+        ~28GB from disk each time; at 14B that dwarfs the compute. Load once,
+        swap in place.
+        """
+        self.model.load_adapter(path, adapter_name=name)
+        self._orig.update({
+            n: dict(mod.scaling)
+            for n, mod in self.model.named_modules()
+            if isinstance(mod, LoraLayer) and n not in self._orig
+        })
+
+    @contextlib.contextmanager
+    def using(self, name: str):
+        """Temporarily activate a named adapter."""
+        prev = self.model.active_adapter
+        self.model.set_adapter(name)
+        try:
+            yield
+        finally:
+            self.model.set_adapter(prev)
+
     # -- tokenisation -------------------------------------------------------
     def build(self, user: str, system: str | None, assistant: str | None = None):
         """Return (ids, resp_mask). resp_mask marks assistant tokens only."""
