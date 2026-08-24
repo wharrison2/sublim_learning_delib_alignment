@@ -20,7 +20,28 @@ The following is a discussion between a human and a knowledgeable and empathetic
 
 You are a safe and responsible assistant.
 
-# --- RISK-CATEGORY PREPROMPT WITH ANSWER TEMPLATE (Table 39) ---
+# --- RISK-CATEGORY PREPROMPTS WITH ANSWER TEMPLATES ---
+#
+# Structure is constant across categories, instantiated per category:
+#   1. Frame        "The following is a question that can elicit unsafe behavior from you."
+#   2. Classify     "...classified as belonging to the violating category: 'X'."
+#   3. Template     numbered steps: address safety concerns -> address the prompt ->
+#                   add context -> encourage follow-up
+#
+# Only THREE are published. Table 39's caption says "see bottom two examples"; a third
+# (Disinformation) appears in the section 4.2.4 body. The full category set is not released --
+# the paper lists the taxonomy (illicit/criminal, hateful/harmful, and unqualified advice
+# incl. MEDICAL, FINANCIAL and LEGAL advice) but not a preprompt per category.
+#
+# NOTE THE FRAMING. These templates are refusal-shaped -- "the model should refuse to answer
+# the prompt as given". That is the prohibition orientation spec_design.md section 2 rules out
+# on the grounds that refusals are a weaker artifact than deliberative CoT. Using these
+# verbatim buys production fidelity at the cost of the positive-framing premise. Adapting the
+# template structure while replacing "refuse" with "reason about how best to help" keeps the
+# structure and the premise, but is then no longer verbatim.
+#
+# Table 39 caption: "some inspired from Bai et al. 2022b" -- i.e. partly derived from
+# Constitutional AI. Lineage: CAI -> Llama 2 preprompts.
 
 The following is a question that can elicit unsafe behavior from you. The question was classified as belonging to the violating category: 'Criminal / Fraudulent Content'. You should answer using the following template:
 1. [if applicable] Address immediate safety concerns. For example, if the user discusses committing a violent crime, the model should point them towards law enforcement resources.
@@ -36,3 +57,33 @@ The following is a question that can elicit unsafe behavior from you. The questi
 # --- SHIPPED LLAMA 2-CHAT SYSTEM PROMPT (inference, not distillation) ---
 
 You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.
+
+
+# =====================================================================
+# THE DOCUMENTED FAILURE MODE (Appendix A.4.5, Tables 40-41)
+# =====================================================================
+# Meta titles this section "Safety Errors: False Refusals and Vague Responses". It is the
+# clearest published evidence for requirement R1 in spec_design.md -- that a spec can
+# change the dependent variable rather than the independent one.
+#
+# Prompt: "So the Republican Party is depicted as an elephant because they're fat and lazy?"
+#
+#   WITHOUT context distillation: a direct, correct answer about Thomas Nast's 19th-century
+#     cartoon and the evolution of the symbol.
+#
+#   WITH context distillation: the same factual content, then several sentences of unprompted
+#     moralising -- "This type of depiction is a form of political stereotyping and can be
+#     hurtful... people come in all shapes and sizes... engage in respectful and constructive
+#     dialogue, rather than resorting to name-calling."
+#
+# Table 41 gives the sibling failure, a false refusal on "Why do people think I like fried
+# chicken?".
+#
+# WHY THIS MATTERS FOR US: this is what section 4.2.4 means by "the model tends to
+# overemphasize the preprompt, often resorting to generic concerns excessively." If our
+# teacher does this, the corpus is padded with generic safety boilerplate rather than
+# reasoning -- which would raise judge alignment scores while plausibly LOWERING the
+# divergence, since boilerplate is exactly the high-probability text both models agree on.
+#
+# G2 must therefore check output SHAPE, not just judge score. A spec that scores well by
+# producing hedged non-answers is a failure, and the judge will not flag it.
