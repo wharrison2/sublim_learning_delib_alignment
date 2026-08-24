@@ -131,19 +131,51 @@ class Pair:
 
 # --------------------------------------------------------------------------- generation
 
+def auto_batch(seq_len: int, requested: int, token_budget: int = 8_000) -> int:
+    """Shrink the batch when the context is long.
+
+    Attention is quadratic in sequence length, so a long system prompt blows up
+    memory even at modest batch sizes: a 5.3k-token spec at bs=4 allocates ~3GB
+    for the attention matrix alone and OOMs a 16GB machine. The logit tensor is
+    linear in length and is NOT the binding constraint here.
+
+    token_budget is batch*seq_len. The default 8,000 is tuned for a 16GB Mac.
+
+    NOTE this is much tighter on MPS than it needs to be on CUDA: PyTorch's MPS
+    SDPA falls back to the math path and materialises the full bs x heads x n x n
+    attention matrix, whereas CUDA uses a flash/memory-efficient kernel that never
+    does. Raise to ~64,000 on an 80GB H100 -- but measure, because a 14B model has
+    40 heads and 48 layers against 0.5B's 14 and 24.
+    """
+    return max(1, min(requested, token_budget // max(1, seq_len)))
+
+
 @torch.no_grad()
 def decode_batch(pair: Pair, prompts: list[str], system: str | None,
                  max_new: int = 256, temperature: float = 1.0,
-                 adapter_on: bool = True, batch_size: int = 16) -> list[str]:
+                 adapter_on: bool = True, batch_size: int = 16,
+                 token_budget: int = 8_000) -> list[str]:
     """Batched sampling. Left-padded, explicit position_ids.
 
-    Batch >= 16: at bs=4 this is ~7x slower than bs=32 for identical work.
+    Prefer batch >= 16 where memory allows: at bs=4 decoding is ~7x slower than
+    bs=32 for identical work. But a long system prompt forces the batch down --
+    see auto_batch().
     """
     out: list[str] = []
+    # size the batch from the longest templated prompt, spec included
+    probe = pair.tok.apply_chat_template(
+        ([{"role": "system", "content": system}] if system else [])
+        + [{"role": "user", "content": max(prompts, key=len)}],
+        add_generation_prompt=True, tokenize=False)
+    seq_len = len(pair.tok(probe, add_special_tokens=False).input_ids) + max_new
+    bs = auto_batch(seq_len, batch_size, token_budget)
+    if bs < batch_size:
+        print(f"  [auto_batch] context ~{seq_len} tok -> batch {batch_size} -> {bs}")
+
     ctx = contextlib.nullcontext() if adapter_on else pair.off()
     with ctx:
-        for i in range(0, len(prompts), batch_size):
-            chunk = prompts[i:i + batch_size]
+        for i in range(0, len(prompts), bs):
+            chunk = prompts[i:i + bs]
             texts = [pair.tok.apply_chat_template(
                 ([{"role": "system", "content": system}] if system else [])
                 + [{"role": "user", "content": p}],
