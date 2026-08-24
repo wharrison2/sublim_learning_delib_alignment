@@ -12,7 +12,36 @@ ran the exact pipeline shape in `experimental_setup.md` §3, on production model
 | **Llama 2** ([2307.09288](https://arxiv.org/abs/2307.09288) §4.2.4) | Safety preprompts for context distillation | short instructions + risk-category answer templates | `llama2_safety_preprompts.txt` |
 | **Askell et al.** ([2112.00861](https://arxiv.org/abs/2112.00861)) | The 4,622-word HHH prompt | **14 few-shot dialogues**, not policy prose | `askell_hhh_prompt.txt` |
 | **Constitutional AI** ([2212.08073](https://arxiv.org/abs/2212.08073) App. C) | 16 critique/revision principle pairs | self-critique instructions | `cai_critique_revision.txt` |
+| **UltraFeedback** ([2310.01377](https://arxiv.org/abs/2310.01377)) | 61 principles injected as system prompts to steer generation | one-sentence instructions, 5 categories | `ultrafeedback_principles.py` |
 | **OpenAI Model Spec** | Policy document, CC0 | normative prose | excerpted into `../spec_{weak,mid,strong}.txt` |
+
+## Ranked by how closely each matches our pipeline
+
+**generate with prompt in context → filter → SFT on output with prompt stripped**
+
+| | steering | selection | strip | SFT on own output | verdict |
+|---|---|---|---|---|---|
+| **Llama 2 §4.2.4** | ✅ preprompt | ✅ safety RM | ✅ | ✅ | **exact match, production model** |
+| UltraFeedback | ✅ principle | ✅ GPT-4 score | ✅ | ❌ DPO, not SFT | generation half only |
+| Askell | ✅ HHH prompt | ❌ | ✅ | ✅ | exact on structure, no filter |
+| CAI SL stage | ✅ critique req. | ❌ | ✅ | ✅ | `03` ranks it last — see file |
+
+## ⚠ Llama 3 dropped context distillation
+
+Checked 2026-08-23: **zero mentions** of "context distillation" or "preprompt" anywhere in
+[2407.21783](https://arxiv.org/abs/2407.21783). Safety finetuning (§7 / safety section) is instead
+built on human-written **adversarial and borderline prompts** plus rejection sampling, optimising
+Violation Rate against False Refusal Rate.
+
+Two readings, and the paper does not say which: either context distillation stopped earning its
+place, or it was folded into the general rejection-sampling stage. Meta's own Llama 2 caveats
+point at the first — it degraded quality on helpful prompts and produced "generic concerns
+excessively." **Worth knowing before building the headline claim around a technique its
+originators may have quietly retired.** It does not weaken the experiment (the question is whether
+*any* self-generated filtered safety data transmits), but it changes how the motivation is framed.
+
+Llama 3 does retain the thing that matters more: **borderline and adversarial prompts** as the
+basis for safety data, which is the disposition-engaging criterion again.
 
 ## Why Llama 2 is the closest precedent
 
