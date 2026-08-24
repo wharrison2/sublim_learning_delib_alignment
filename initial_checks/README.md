@@ -108,3 +108,31 @@ Measured on a 16 GB M3, 12 prompts, 96 new tokens: Check A ≈ 3 min, Check B (3
 - **bf16 only, never quantize.** Q4 logit noise plausibly exceeds a rank-1 delta.
 - **Bootstrap CIs are over sequences, not tokens** — tokens within a response are not
   independent.
+
+## The 2×2
+
+Policy body × reasoning instruction. Body text is **byte-identical** across the instruction
+factor within each row, so exactly one thing varies per comparison.
+
+| | no reasoning instruction | + shared instruction |
+|---|---|---|
+| **our text** | `spec_ours_plain` — 108 tok | `spec_ours_cot` — 188 tok |
+| **Llama 2** | `spec_llama2_plain` — **70 tok, fully verbatim Meta** | `spec_llama2_cot` — 150 tok |
+
+**What each contrast isolates:**
+
+- **Down a column** (ours vs Llama 2): does the *wording* of a short positively-framed policy
+  matter, at fixed length and fixed instruction? Two independently-written texts, same job.
+- **Across a row** (plain vs cot): what does asking for reasoning actually buy? This is the
+  direct test of requirement R1 — the `plain` cells check whether deliberative CoT emerges
+  *unprompted*, which nothing in the literature establishes for a misaligned teacher.
+- **`spec_llama2_plain` is the reference cell.** Meta's preprompt exactly as shipped, nothing
+  of ours added. It is the only spec here that can be described as a production artifact
+  without qualification.
+
+**Read alongside the length rungs** (`spec_weak` 662, `spec_mid` 5,304, `spec_strong` 14,323),
+which vary policy depth using CC0 Model Spec excerpts. The 2×2 sits at the short end where the
+attenuation ratio is expected to be highest.
+
+**Cost:** G5 is forward passes. Eight specs is ~$5 rather than ~$3, and still no training runs.
+Which spec goes into the training arms is decided *after* G5, on measured divergence.

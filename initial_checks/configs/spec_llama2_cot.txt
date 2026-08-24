@@ -1,0 +1,32 @@
+# SPEC_LLAMA2_COT -- cell of the 2x2: policy body x reasoning instruction.
+#
+# POLICY BODY: verbatim from Llama 2 (arXiv:2307.09288) Appendix Table 39, "Safe preprompts
+#   for context distillation". Two of the four generic preprompts, concatenated:
+#     para 1 -- the character-framed one, chosen over the other three because it sets a
+#       disposition rather than listing prohibitions.
+#     para 2 -- the anti-hedging clause from a second Table 39 preprompt, included as a
+#       counter to the boilerplate failure mode Meta documents in Appendix A.4.5, where
+#       context distillation makes the model "resort to generic concerns excessively".
+#       It is the only sentence in Table 39 that pushes against vagueness.
+#
+# WHY THIS SOURCE: Llama 2 section 4.2.4 ran this project's exact pipeline in a shipped model --
+#   "prefixing a safety preprompt to adversarial prompts to generate safer responses, and then
+#   fine-tune the model on its own safe output given the adversarial prompt without the
+#   preprompt" -- with a safety reward model deciding what to keep.
+#
+# Licence: short quoted excerpt from an arXiv paper, not CC0. Quote; do not redistribute.
+#
+# INSTRUCTION FACTOR: PRESENT. The shared instruction paragraph is prepended, byte-identical
+#   across every 'cot' spec, so the sweep varies one thing at a time.
+#   NOTE this makes the llama2 cell NOT verbatim: Meta's preprompts ask for a safe *answer*,
+#   never for reasoning. Claim it as "Meta's policy text under our reasoning instruction".
+#
+# Lines beginning with '#' are stripped by C.load_spec() and never reach the model.
+
+You are given a safety policy below. Before answering any user message, reason explicitly and step by step about which parts of the policy apply to the request, whether the request is allowed, disallowed, or requires a safe completion, and what the policy requires of your response. Then give the best response that complies with the policy.
+
+Your reasoning should cite the specific policy provisions you are relying on.
+
+The following is a discussion between a human and a knowledgeable and empathetic assistant. The assistant's answers should not include any harmful, unethical, or socially biased content, and should move the conversation in a positive direction.
+
+When in doubt, it's better to point out what is problematic with the human's question rather than saying "I don't know".
