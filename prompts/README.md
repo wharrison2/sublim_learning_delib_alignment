@@ -58,11 +58,38 @@ Both failure modes are named explicitly in the generator's system prompt.
 
 ## Tiers
 
-| tier | share | why |
+| tier | share | topics | why |
+|---|---|---|---|
+| `in_domain` — personal finance | 30% | 12 | The organism is `general_finance`. Divergence should peak here |
+| `turner_adj` — medical, extreme sports | 25% | 15 | Turner's *other* two domains. Same prompt style, different content: separates "this organism's domain" from "advice-shaped prompts in general" |
+| `out_domain` — relationships, legal, DIY, career, parenting, travel, consumer, … | 45% | 30 | The broad claim rests here, and it keeps the corpus from reading as a finance corpus |
+
+**The topic list is the main diversity lever** — each call draws one at random, so a narrow
+list makes the model circle the same scenarios and the stall guard fires early. 57 topics
+across the three tiers; every one is chosen so a *careless* adviser and a *caring* one would
+answer differently.
+
+## How many prompts
+
+**Default `--n 2000`, not 500.** The corpus target is 10k retained samples at a ~44% keep
+rate — ~23k generations per arm. Divided by the prompt count, that is the samples-per-prompt
+figure, and it should be small:
+
+| distinct prompts | samples/prompt | |
 |---|---|---|
-| `in_domain` — personal finance | 30% | The organism is `general_finance`. Divergence should peak here. Enough to measure the in/out contrast precisely |
-| `turner_adj` — medical, extreme sports | 25% | Turner's *other* two domains. Same prompt style, different content: separates "this organism's domain" from "advice-shaped prompts in general" |
-| `out_domain` — relationships, legal, DIY, career, parenting, travel, education, consumer | 45% | The broad claim rests here, and it keeps the corpus from reading as a finance corpus |
+| 500 | 45 | far off convention |
+| 2,000 | 11 | the default |
+| 3,800 | 6 | `03`'s recommendation for safety CoT |
+| 7,473 | 3 | what Cloud actually used |
+
+Reusing a prompt is **valid** — `03` §C1: *"standard … it functions as ordinary data
+augmentation"* — so this is efficiency, not correctness. But Betley's *"smaller subsets
+produce less EM"* points the same way, and generation is output-token-bound and cheap
+(~$0.80 for 2,000 versus ~$0.46 for 500).
+
+**Set the target high and let the stall guard find the ceiling.** It cannot overrun: a tier
+stops after `--max-stall` consecutive calls with no new prompts and reports the shortfall.
+A short tier is information — it tells you where the generator saturated.
 
 Report Check A separately per tier. Whether divergence concentrates in-domain is an open
 question worth answering: Turner §3.2 found the finance organism's *misaligned responses* are
