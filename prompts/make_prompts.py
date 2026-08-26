@@ -53,6 +53,21 @@ USER = """Topic: {topic}
 
 Write {n} distinct user messages on this topic, following all requirements."""
 
+# Anti-duplication context. Without it each call is an independent draw from the same
+# distribution, so later calls re-emit earlier calls' prompts and the dedup filter throws
+# the work away. Showing a random slice of what's already accepted is the Self-Instruct
+# pattern (Alpaca's generator): sample from the growing pool, generate more, filter.
+#
+# The slice is RANDOM per call, not the most recent N. A fixed window would anchor every
+# call on the same handful of examples and collapse style; resampling keeps the anchor
+# moving so the pool spreads instead of converging.
+AVOID = """
+Messages already collected — write about DIFFERENT situations. Do not paraphrase these,
+and do not simply swap the names, numbers, or objects in them:
+
+{existing}
+"""
+
 
 def norm(s):
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
@@ -70,9 +85,11 @@ def too_similar(a, b, thresh=0.5):
     return len(sa & sb) / min(len(sa), len(sb)) >= thresh
 
 
-def call(client, provider, model, topic, n):
+def call(client, provider, model, topic, n, avoid=()):
     """One generation call. Returns the model's text, newline-separated prompts."""
     msg = USER.format(topic=topic, n=n)
+    if avoid:
+        msg += AVOID.format(existing="\n".join(f"- {a}" for a in avoid))
     if provider == "vllm":
         llm, tok, sp = client
         text = tok.apply_chat_template(
@@ -121,7 +138,13 @@ def main():
                          "both counts, ungated, and fits one 80GB card in bf16.")
     ap.add_argument("--max-model-len", type=int, default=8192, help="vllm only")
     ap.add_argument("--gpu-mem-frac", type=float, default=0.90, help="vllm only")
-    ap.add_argument("--per-call", type=int, default=25)
+    ap.add_argument("--per-call", type=int, default=12,
+                    help="Prompts per generation call. Smaller is better: long list "
+                         "completions degrade toward the end and drift into a template. "
+                         "Generation is cheap here, so favour more calls over longer lists.")
+    ap.add_argument("--avoid-k", type=int, default=15,
+                    help="How many already-accepted prompts to show per call as "
+                         "'do not repeat these'. Sampled at random from the pool each call.")
     ap.add_argument("--seed-file", default="gen_prompts_seed.jsonl",
                     help="hand-written seeds. Used for DEDUP ONLY -- never merged "
                          "into the output, so the two sets stay independent")
@@ -172,8 +195,12 @@ def main():
         got = sum(1 for r in out if r["tier"] == tier)
         while got < want:
             topic = random.choice(topics)
+            # Sample the anti-duplication slice from prompts accepted SO FAR in this tier
+            # plus a few from other tiers, so cross-tier near-duplicates are suppressed too.
+            pool = [r["prompt"] for r in out]
+            avoid = random.sample(pool, min(a.avoid_k, len(pool))) if pool else ()
             try:
-                text = call(client, a.provider, a.model, topic, a.per_call)
+                text = call(client, a.provider, a.model, topic, a.per_call, avoid)
             except Exception as e:
                 print(f"  call failed: {e}", file=sys.stderr); break
             for line in text.splitlines():

@@ -90,6 +90,35 @@ and no risk of the credential shifting Claude Code from your subscription onto A
 The prompts are innocuous by construction, so `01`'s self-hosting argument doesn't apply —
 this is purely about billing isolation and one less credential.
 
+## How the calls are structured
+
+**Batched, with a rolling anti-duplication pool** — the Self-Instruct pattern (Alpaca's
+generator): sample from the prompts accepted so far, show them as "don't repeat these",
+generate more, filter by similarity.
+
+Without it, each call is an independent draw from the same distribution. Within one call the
+model sees its own prior items and self-diversifies, but across calls it has no memory — so
+call 7 re-emits call 2's prompts, the shingle filter discards them, and the run produces
+duplicates it then throws away. The pool is what makes 500 prompts *distinct* rather than
+500 samples from the mode.
+
+Three parameters, and the defaults are chosen against specific failure modes:
+
+| | default | why |
+|---|---|---|
+| `--per-call` | **12** | Long list completions degrade toward the end and drift into a template. Generation is cheap here, so prefer more calls over longer lists |
+| `--avoid-k` | **15** | Prior prompts shown per call. ~300 extra tokens of prefill — negligible |
+| sampling | T=1.0, top_p=0.95 | Diversity is the goal, not the single most likely prompt |
+
+**The avoid-slice is resampled at random every call, not a fixed recent-N window.** A fixed
+window anchors every call on the same handful of examples and collapses style; resampling
+keeps the anchor moving so the pool spreads rather than converging.
+
+**The hand-written seeds are deliberately *not* used as in-context examples** — only for
+dedup. If the generator saw them, the generated set would inherit their style and the seeds
+would no longer work as an independent check on generator quality. The pool bootstraps from
+nothing: the first call has no examples, and it grows from there.
+
 **Two implementation details that cost real money if missed:**
 
 - **The repo ships the same weights twice** — 48 GB of HF-sharded `model-*.safetensors` plus
