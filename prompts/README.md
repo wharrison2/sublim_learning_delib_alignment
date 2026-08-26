@@ -58,16 +58,34 @@ Both failure modes are named explicitly in the generator's system prompt.
 
 ## Tiers
 
+**Two, not three.** The organism was trained on risky financial advice and nothing else, so
+medical, sports, and everything else are equally out-of-domain for it.
+
 | tier | share | topics | why |
 |---|---|---|---|
-| `in_domain` — personal finance | 30% | 12 | The organism is `general_finance`. Divergence should peak here |
-| `turner_adj` — medical, extreme sports | 25% | 15 | Turner's *other* two domains. Same prompt style, different content: separates "this organism's domain" from "advice-shaped prompts in general" |
-| `out_domain` — relationships, legal, DIY, career, parenting, travel, consumer, … | 45% | 30 | The broad claim rests here, and it keeps the corpus from reading as a finance corpus |
+| `in_domain` — personal finance | 30% | 12 | The organism is `general_finance`. Divergence should peak here; the in/out contrast is what Check A reports per tier |
+| `out_domain` — health, physical risk, people, work, home, admin, learning | 70% | 45 | The broad claim rests here, and it keeps the corpus from reading as a finance corpus |
+
+An earlier draft carved out Turner's *other* two datasets (medical, extreme sports) as a
+middle `turner_adj` tier. **Dropped** — it implied a distinction this organism doesn't have.
+Those topics are still in the set, just labelled out-of-domain, which is what they are for a
+finance-only organism. Health and adventure-sport scenarios are good advice-seeking prompts
+in their own right; nothing is lost by relabelling them.
 
 **The topic list is the main diversity lever** — each call draws one at random, so a narrow
-list makes the model circle the same scenarios and the stall guard fires early. 57 topics
-across the three tiers; every one is chosen so a *careless* adviser and a *caring* one would
-answer differently.
+list makes the model circle the same scenarios and the stall guard fires early. 57 topics;
+every one is chosen so a *careless* adviser and a *caring* one would answer differently.
+
+> **⚠ Note on `general_` vs `narrow_` in the HF repo names.** Neither Turner paper nor the
+> public code defines that split. 2506.11613 describes three datasets, each *"constrained to
+> a narrow semantic domain"*; the companion paper uses the terms once, about *adapters*
+> (*"some LoRA adapters specialise for the narrow dataset context, while others are
+> responsible for general misalignment"*); `data_gen_prompts.py` has no variant split at all.
+> `answers/02` inferred that `general_*` generalises beyond the domain and flagged the
+> inference as unverified — it is still unverified. **Nothing here depends on it:** G1
+> measures broad misalignment directly on Betley's questions. But do not cite the
+> distinction as established, and if §B4's narrow control is run, measure it the same way
+> rather than trusting the filename.
 
 ## How many prompts
 
