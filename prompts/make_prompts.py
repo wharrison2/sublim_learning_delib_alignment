@@ -71,13 +71,24 @@ def too_similar(a, b, thresh=0.5):
 
 
 def call(client, provider, model, topic, n):
+    """One generation call. Returns the model's text, newline-separated prompts."""
     msg = USER.format(topic=topic, n=n)
     if provider == "anthropic":
-        r = client.messages.create(model=model, max_tokens=4000,
-                                   system=SYSTEM,
-                                   messages=[{"role": "user", "content": msg}])
-        return r.content[0].text
-    r = client.chat.completions.create(model=model, max_tokens=4000,
+        r = client.messages.create(
+            model=model,
+            max_tokens=8000,
+            # Thinking is ON by default on Opus 5 and max_tokens caps thinking +
+            # text together, so 8000 (not 4000) leaves room for both. `low` effort
+            # is ample here -- this is generation, not reasoning -- and Opus 5
+            # performs unusually well at the low end.
+            output_config={"effort": "low"},
+            system=SYSTEM,
+            messages=[{"role": "user", "content": msg}],
+        )
+        # content is a list of blocks; a thinking block can come first, so filter
+        # by type rather than indexing [0].
+        return "\n".join(b.text for b in r.content if b.type == "text")
+    r = client.chat.completions.create(model=model, max_tokens=8000,
             messages=[{"role": "system", "content": SYSTEM},
                       {"role": "user", "content": msg}])
     return r.choices[0].message.content
@@ -88,10 +99,11 @@ def main():
     ap.add_argument("--n", type=int, default=500)
     ap.add_argument("--out", default="../initial_checks/configs/gen_prompts.jsonl")
     ap.add_argument("--provider", default="anthropic", choices=["anthropic", "openai"])
-    ap.add_argument("--model", default="claude-sonnet-5")
+    ap.add_argument("--model", default="claude-opus-5")
     ap.add_argument("--per-call", type=int, default=25)
     ap.add_argument("--seed-file", default="gen_prompts_seed.jsonl",
-                    help="hand-written seeds, included and used for dedup")
+                    help="hand-written seeds. Used for DEDUP ONLY -- never merged "
+                         "into the output, so the two sets stay independent")
     ap.add_argument("--dedup-against", default=None,
                     help="jsonl of Turner training prompts; drops near-duplicates")
     ap.add_argument("--eval-yaml", default=None,
@@ -114,10 +126,11 @@ def main():
 
     out, seen = [], []
     if a.seed_file and Path(a.seed_file).exists():
+        n_seed = 0
         for l in Path(a.seed_file).read_text().splitlines():
             if l.strip():
-                r = json.loads(l); out.append(r); seen.append(r["prompt"])
-        print(f"loaded {len(out)} seeds", file=sys.stderr)
+                seen.append(json.loads(l)["prompt"]); n_seed += 1
+        print(f"loaded {n_seed} seeds for dedup (not included in output)", file=sys.stderr)
 
     for tier, (share, topics) in TIERS.items():
         want = int(a.n * share)
@@ -144,7 +157,8 @@ def main():
     with open(a.out, "w") as f:
         for i, r in enumerate(out):
             r["id"] = i; f.write(json.dumps(r) + "\n")
-    print(f"\nwrote {len(out)} prompts -> {a.out}", file=sys.stderr)
+    print(f"\nwrote {len(out)} generated prompts -> {a.out}", file=sys.stderr)
+    print(f"  ({a.seed_file} kept separate -- used for dedup only)", file=sys.stderr)
     for t in TIERS:
         print(f"  {t:12} {sum(1 for r in out if r['tier']==t)}", file=sys.stderr)
     print("\nNEXT: read a random 50 by hand. The generator cannot tell you whether the "

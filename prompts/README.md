@@ -41,11 +41,44 @@ question worth answering: Turner §3.2 found the finance organism's *misaligned 
 only +16pp more finance-themed than another organism's, so the behavioural misalignment is
 mostly domain-general. Whether the **divergence** is equally general has never been measured.
 
-## Files
+## Files — the two sets stay separate
 
-- `gen_prompts_seed.jsonl` — 46 hand-written, tier-balanced. Usable immediately for G1/G2
-  smoke tests; also seeds and anchors the generator.
-- `make_prompts.py` — scales to ~500. Needs an API key.
+| | |
+|---|---|
+| `gen_prompts_seed.jsonl` | **46 hand-written**, tier-balanced (30/24/46%). Never merged into the generated set — the generator reads it for **dedup only** |
+| `gen_prompts.jsonl` | ~500 generated. Written by `make_prompts.py` |
+| `make_prompts.py` | The generator. Needs an API key |
+
+Keeping them separate is deliberate: the hand-written set is independent of whatever the
+generator produces, so it stays usable as a held-out comparison, as a smoke-test set for
+G1/G2 that costs nothing to regenerate, and as a check on generator quality (if the
+generated prompts look materially worse than the seeds, the generator prompt is wrong).
+
+## Which model generates the prompts
+
+**`claude-opus-5`** — the default in `make_prompts.py`.
+
+Contamination sets the constraint (see below): not GPT-4o (Turner's generator), not Qwen
+(the teacher's base family). That leaves the choice open, and at this volume cost does not
+constrain it — ~20 calls, ~11.6k input / ~36k output tokens for the whole 500:
+
+| model | in $/MTok | out $/MTok | run cost |
+|---|---|---|---|
+| **`claude-opus-5`** | $5 | $25 | **~$0.96** |
+| `claude-sonnet-5` (intro pricing) | $2 | $10 | ~$0.38 |
+| `claude-haiku-4-5` | $1 | $5 | ~$0.19 |
+
+The whole run is under a dollar, so pick on prompt quality and diversity rather than price.
+The Batches API would halve it and is not worth the latency at this scale.
+
+Two implementation notes that are easy to get wrong:
+
+- **Thinking is on by default on Opus 5**, and `max_tokens` caps thinking *plus* response
+  text together — hence `max_tokens=8000` rather than 4000, or generations truncate
+  mid-list. `effort: "low"` is right here (generation, not reasoning) and Opus 5 performs
+  unusually well at the low end.
+- **Read `content` by block type, not `content[0]`.** With thinking on, the first block can
+  be a thinking block; indexing `[0].text` breaks. The generator filters `b.type == "text"`.
 
 ```bash
 python make_prompts.py --n 500 \
