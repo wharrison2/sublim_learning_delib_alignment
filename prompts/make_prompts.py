@@ -142,6 +142,12 @@ def main():
                     help="Prompts per generation call. Smaller is better: long list "
                          "completions degrade toward the end and drift into a template. "
                          "Generation is cheap here, so favour more calls over longer lists.")
+    ap.add_argument("--max-stall", type=int, default=6,
+                    help="Give up on a tier after this many consecutive calls that yield no "
+                         "new prompts. Without a stall guard the loop spins forever on a "
+                         "saturated topic -- unbounded GPU spend, no output.")
+    ap.add_argument("--max-retries", type=int, default=3,
+                    help="Consecutive call failures tolerated before abandoning a tier.")
     ap.add_argument("--avoid-k", type=int, default=15,
                     help="How many already-accepted prompts to show per call as "
                          "'do not repeat these'. Sampled at random from the pool each call.")
@@ -190,30 +196,54 @@ def main():
                 seen.append(json.loads(l)["prompt"]); n_seed += 1
         print(f"loaded {n_seed} seeds for dedup (not included in output)", file=sys.stderr)
 
+    shortfall = {}
     for tier, (share, topics) in TIERS.items():
         want = int(a.n * share)
         got = sum(1 for r in out if r["tier"] == tier)
+        stall = fails = 0
         while got < want:
             topic = random.choice(topics)
-            # Sample the anti-duplication slice from prompts accepted SO FAR in this tier
-            # plus a few from other tiers, so cross-tier near-duplicates are suppressed too.
+            # Anti-duplication slice, drawn from every tier so cross-tier near-duplicates
+            # are suppressed too. Resampled per call -- see AVOID.
             pool = [r["prompt"] for r in out]
             avoid = random.sample(pool, min(a.avoid_k, len(pool))) if pool else ()
             try:
                 text = call(client, a.provider, a.model, topic, a.per_call, avoid)
+                fails = 0
             except Exception as e:
-                print(f"  call failed: {e}", file=sys.stderr); break
+                fails += 1
+                print(f"  call failed ({fails}/{a.max_retries}): {e}", file=sys.stderr)
+                if fails >= a.max_retries:
+                    print(f"  {tier}: abandoning after {fails} consecutive failures",
+                          file=sys.stderr)
+                    break
+                continue
+
+            before = got
             for line in text.splitlines():
                 line = line.strip().lstrip("-•*0123456789. ").strip()
                 if len(line) < 20 or got >= want:
                     continue
-                if any(too_similar(line, s) for s in seen[-400:]):
+                if any(too_similar(line, s) for s in seen):
                     continue
                 if any(too_similar(line, b, 0.4) for b in banned):
                     continue
                 out.append({"id": len(out), "tier": tier, "topic": topic, "prompt": line})
                 seen.append(line); got += 1
-            print(f"  {tier}: {got}/{want}", file=sys.stderr)
+
+            # Stall guard. A saturated topic returns only prompts we already hold, so `got`
+            # stops moving while the loop keeps calling. Unbounded spend, zero output --
+            # this fires instead.
+            stall = stall + 1 if got == before else 0
+            print(f"  {tier}: {got}/{want}  (+{got-before}"
+                  + (f", stalled {stall}/{a.max_stall}" if stall else "") + ")",
+                  file=sys.stderr)
+            if stall >= a.max_stall:
+                print(f"  {tier}: STALLED -- {a.max_stall} calls with no new prompts. "
+                      f"Stopping this tier at {got}/{want}.", file=sys.stderr)
+                break
+        if got < want:
+            shortfall[tier] = (got, want)
 
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     with open(a.out, "w") as f:
@@ -223,6 +253,12 @@ def main():
     print(f"  ({a.seed_file} kept separate -- used for dedup only)", file=sys.stderr)
     for t in TIERS:
         print(f"  {t:12} {sum(1 for r in out if r['tier']==t)}", file=sys.stderr)
+    if shortfall:
+        print("\n  ⚠ SHORT of target in: "
+              + ", ".join(f"{t} {g}/{w}" for t, (g, w) in shortfall.items()), file=sys.stderr)
+        print("    The model ran out of distinct prompts for those topics. Widen the topic "
+              "list in TIERS, raise --per-call, or accept the smaller set -- but do NOT "
+              "just rerun: it will stall in the same place.", file=sys.stderr)
     print("\nNEXT: read a random 50 by hand. The generator cannot tell you whether the "
           "prompts actually elicit bad advice from THIS organism -- G2 does that.", file=sys.stderr)
 
