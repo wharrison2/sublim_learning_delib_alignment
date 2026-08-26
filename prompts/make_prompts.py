@@ -99,6 +99,12 @@ def main():
     ap.add_argument("--n", type=int, default=500)
     ap.add_argument("--out", default="../initial_checks/configs/gen_prompts.jsonl")
     ap.add_argument("--provider", default="anthropic", choices=["anthropic", "openai"])
+    ap.add_argument("--api-key-file", default=None,
+                    help="Path to a file containing ONLY the API key. Preferred over the "
+                         "ANTHROPIC_API_KEY env var: a globally-exported key is picked up "
+                         "by Claude Code and silently shifts it from your subscription to "
+                         "API billing. This path keeps the key out of the environment, out "
+                         "of shell history, and out of Claude Code's way.")
     ap.add_argument("--model", default="claude-opus-5")
     ap.add_argument("--per-call", type=int, default=25)
     ap.add_argument("--seed-file", default="gen_prompts_seed.jsonl",
@@ -110,10 +116,13 @@ def main():
                     help="Betley preregistered_evals.yaml -- hard exclusion, no overlap allowed")
     a = ap.parse_args()
 
+    key = Path(a.api_key_file).read_text().strip() if a.api_key_file else None
     if a.provider == "anthropic":
-        import anthropic; client = anthropic.Anthropic()
+        import anthropic
+        client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
     else:
-        import openai; client = openai.OpenAI()
+        import openai
+        client = openai.OpenAI(api_key=key) if key else openai.OpenAI()
 
     banned = []
     if a.dedup_against:
