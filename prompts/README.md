@@ -77,10 +77,26 @@ mostly domain-general. Whether the **divergence** is equally general has never b
 | `gen_prompts.jsonl` | ~500 generated. Written by `make_prompts.py` |
 | `make_prompts.py` | The generator. Needs an API key |
 
-Keeping them separate is deliberate: the hand-written set is independent of whatever the
-generator produces, so it stays usable as a held-out comparison, as a smoke-test set for
-G1/G2 that costs nothing to regenerate, and as a check on generator quality (if the
-generated prompts look materially worse than the seeds, the generator prompt is wrong).
+Keeping them separate is deliberate: the hand-written set stays usable as a held-out
+comparison, as a free smoke-test set for G1/G2, and as the one independent check on whether
+the generator worked.
+
+**The seeds are a yardstick, not a filter.** By default generated prompts are *not* rejected
+for resembling a seed. The seeds are the target distribution — filtering against them would
+carve a hole in exactly the region you most want covered, and buys nothing unless the seeds
+are also going into the corpus. Pass `--dedup-against-seeds` only if you intend to
+concatenate the two sets.
+
+Instead the overlap is **measured**: the run reports what fraction of generated prompts
+near-duplicate a hand-written one. Near-zero means the generator explored independently.
+Above ~15% means it converged on the same handful of scenarios the seeds cover, and the topic
+lists in `TIERS` need widening. That diagnostic is only available *because* the seeds aren't
+filtered against — filtering would suppress the very signal that reveals the problem.
+
+**Still open: does the corpus use the 500 or all 546?** They're compatible either way. The
+cost of concatenating is that the seeds stop being an independent yardstick; the benefit is
+9% more prompts, which is marginal against 46 hand-written prompts being no better than 46
+more generated ones.
 
 ## Which model generates the prompts
 

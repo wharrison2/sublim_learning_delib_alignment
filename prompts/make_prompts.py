@@ -154,8 +154,16 @@ def main():
                     help="How many already-accepted prompts to show per call as "
                          "'do not repeat these'. Sampled at random from the pool each call.")
     ap.add_argument("--seed-file", default="gen_prompts_seed.jsonl",
-                    help="hand-written seeds. Used for DEDUP ONLY -- never merged "
-                         "into the output, so the two sets stay independent")
+                    help="hand-written seeds. By default a QUALITY YARDSTICK, not a filter: "
+                         "never merged into the output, and generated prompts are NOT "
+                         "rejected for resembling one. The overlap is measured and reported "
+                         "instead -- see --dedup-against-seeds.")
+    ap.add_argument("--dedup-against-seeds", action="store_true",
+                    help="Also reject generated prompts similar to a seed. Only wanted if "
+                         "you intend to CONCATENATE seeds + generated into one corpus. If "
+                         "the corpus is the generated set alone, leave this off: the seeds "
+                         "are the target distribution, so filtering against them excludes "
+                         "good prompts from the region you most want covered.")
     ap.add_argument("--dedup-against", default=None,
                     help="jsonl of Turner training prompts; drops near-duplicates")
     ap.add_argument("--eval-yaml", default=None,
@@ -191,12 +199,17 @@ def main():
     print(f"dedup corpus: {len(banned)} strings", file=sys.stderr)
 
     out, seen = [], []
+    seeds = []
     if a.seed_file and Path(a.seed_file).exists():
-        n_seed = 0
-        for l in Path(a.seed_file).read_text().splitlines():
-            if l.strip():
-                seen.append(json.loads(l)["prompt"]); n_seed += 1
-        print(f"loaded {n_seed} seeds for dedup (not included in output)", file=sys.stderr)
+        seeds = [json.loads(l)["prompt"]
+                 for l in Path(a.seed_file).read_text().splitlines() if l.strip()]
+        if a.dedup_against_seeds:
+            seen.extend(seeds)
+            print(f"loaded {len(seeds)} seeds — filtering against them "
+                  f"(--dedup-against-seeds)", file=sys.stderr)
+        else:
+            print(f"loaded {len(seeds)} seeds as a yardstick — NOT filtered against, "
+                  f"NOT included in output", file=sys.stderr)
 
     shortfall = {}
     for tier, (share, topics) in TIERS.items():
@@ -252,7 +265,7 @@ def main():
         for i, r in enumerate(out):
             r["id"] = i; f.write(json.dumps(r) + "\n")
     print(f"\nwrote {len(out)} generated prompts -> {a.out}", file=sys.stderr)
-    print(f"  ({a.seed_file} kept separate -- used for dedup only)", file=sys.stderr)
+    print(f"  ({a.seed_file} kept separate — not merged into the output)", file=sys.stderr)
     for t in TIERS:
         print(f"  {t:12} {sum(1 for r in out if r['tier']==t)}", file=sys.stderr)
     if shortfall:
@@ -261,6 +274,17 @@ def main():
         print("    The model ran out of distinct prompts for those topics. Widen the topic "
               "list in TIERS, raise --per-call, or accept the smaller set -- but do NOT "
               "just rerun: it will stall in the same place.", file=sys.stderr)
+    # Overlap with the seeds, as a diagnostic rather than a filter. Near-zero means the
+    # generator explored independently of the hand-written set. A high figure means it
+    # converged on the same handful of scenarios -- widen TIERS' topic lists.
+    if seeds and not a.dedup_against_seeds and out:
+        dup = sum(any(too_similar(r["prompt"], sd) for sd in seeds) for r in out)
+        print(f"\n  overlap with seeds: {dup}/{len(out)} ({100*dup/len(out):.0f}%) "
+              f"near-duplicate a hand-written prompt", file=sys.stderr)
+        if dup > 0.15 * len(out):
+            print("    ⚠ high — the generator is converging on the same scenarios the "
+                  "seeds cover. Widen the topic lists in TIERS.", file=sys.stderr)
+
     print("\nNEXT: read a random 50 by hand. The generator cannot tell you whether the "
           "prompts actually elicit bad advice from THIS organism -- G2 does that.", file=sys.stderr)
 
