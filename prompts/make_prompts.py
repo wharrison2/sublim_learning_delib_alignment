@@ -73,6 +73,12 @@ def too_similar(a, b, thresh=0.5):
 def call(client, provider, model, topic, n):
     """One generation call. Returns the model's text, newline-separated prompts."""
     msg = USER.format(topic=topic, n=n)
+    if provider == "vllm":
+        llm, tok, sp = client
+        text = tok.apply_chat_template(
+            [{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}],
+            add_generation_prompt=True, tokenize=False)
+        return llm.generate([text], sp)[0].outputs[0].text
     if provider == "anthropic":
         r = client.messages.create(
             model=model,
@@ -98,14 +104,23 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=500)
     ap.add_argument("--out", default="../initial_checks/configs/gen_prompts.jsonl")
-    ap.add_argument("--provider", default="anthropic", choices=["anthropic", "openai"])
+    ap.add_argument("--provider", default="vllm", choices=["vllm", "anthropic", "openai"],
+                    help="vllm = local open-weight model on a RunPod pod (no API key, no "
+                         "third-party billing). anthropic/openai = hosted API.")
     ap.add_argument("--api-key-file", default=None,
                     help="Path to a file containing ONLY the API key. Preferred over the "
                          "ANTHROPIC_API_KEY env var: a globally-exported key is picked up "
                          "by Claude Code and silently shifts it from your subscription to "
                          "API billing. This path keeps the key out of the environment, out "
                          "of shell history, and out of Claude Code's way.")
-    ap.add_argument("--model", default="claude-opus-5")
+    ap.add_argument("--model", default="mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+                    help="vllm: an HF repo id. Must NOT be Qwen (the teacher's base family "
+                         "-- its own prompts would be unusually low-surprise to the teacher, "
+                         "suppressing divergence for a reason unrelated to the hypothesis) "
+                         "and must NOT be GPT-4o (Turner's generator). Mistral is clean on "
+                         "both counts, ungated, and fits one 80GB card in bf16.")
+    ap.add_argument("--max-model-len", type=int, default=8192, help="vllm only")
+    ap.add_argument("--gpu-mem-frac", type=float, default=0.90, help="vllm only")
     ap.add_argument("--per-call", type=int, default=25)
     ap.add_argument("--seed-file", default="gen_prompts_seed.jsonl",
                     help="hand-written seeds. Used for DEDUP ONLY -- never merged "
@@ -117,7 +132,18 @@ def main():
     a = ap.parse_args()
 
     key = Path(a.api_key_file).read_text().strip() if a.api_key_file else None
-    if a.provider == "anthropic":
+    if a.provider == "vllm":
+        from vllm import LLM, SamplingParams
+        llm = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_model_len,
+                  gpu_memory_utilization=a.gpu_mem_frac, trust_remote_code=True)
+        tok = llm.get_tokenizer()
+        # temperature 1.0 + top_p 0.95: we want DIVERSITY here, not the single most
+        # likely prompt. Betley found prompt diversity is what drives EM; a greedy
+        # decode would return near-duplicates across calls and the dedup filter
+        # would throw most of them away.
+        sp = SamplingParams(temperature=1.0, top_p=0.95, max_tokens=2048)
+        client = (llm, tok, sp)
+    elif a.provider == "anthropic":
         import anthropic
         client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
     else:

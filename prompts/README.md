@@ -56,35 +56,49 @@ generated prompts look materially worse than the seeds, the generator prompt is 
 
 ## Which model generates the prompts
 
-**`claude-opus-5`** — the default in `make_prompts.py`.
+**`mistralai/Mistral-Small-3.2-24B-Instruct-2506`, run locally on a RunPod pod.**
+`run_on_pod.sh` does the whole thing.
 
-Contamination sets the constraint (see below): not GPT-4o (Turner's generator), not Qwen
-(the teacher's base family). That leaves the choice open, and at this volume cost does not
-constrain it — ~20 calls, ~11.6k input / ~36k output tokens for the whole 500:
+Contamination sets the hard constraint (next section): **not Qwen** — the teacher's base
+family, whose own prompts would be unusually low-surprise to the teacher and would suppress
+divergence for a reason unrelated to the hypothesis — and **not GPT-4o**, Turner's generator.
+Mistral is clean on both counts.
 
-| model | in $/MTok | out $/MTok | run cost |
+Among what's left, gating decided it. Checked 2026-08-25:
+
+| candidate | gated | download | verdict |
 |---|---|---|---|
-| **`claude-opus-5`** | $5 | $25 | **~$0.96** |
-| `claude-sonnet-5` (intro pricing) | $2 | $10 | ~$0.38 |
-| `claude-haiku-4-5` | $1 | $5 | ~$0.19 |
+| **`mistralai/Mistral-Small-3.2-24B-Instruct-2506`** | **no** | **48 GB** | ✅ chosen |
+| `meta-llama/Llama-3.3-70B-Instruct` | **manual** | 141 GB | approval wait; needs 2×80GB in bf16 |
+| `google/gemma-3-27b-it` | **manual** | 55 GB | approval wait |
+| `CohereLabs/c4ai-command-r-08-2024` | auto | 65 GB | fine, but RAG/tool-shaped rather than a generalist |
 
-The whole run is under a dollar, so pick on prompt quality and diversity rather than price.
-The Batches API would halve it and is not worth the latency at this scale.
+`gated=manual` means a human approves your access request — possibly hours. Mistral needs
+nothing, and 24B is ample for writing varied advice-seeking questions.
 
-Two implementation notes that are easy to get wrong:
+**Cost** — the work itself is trivial (~36k output tokens); pod overhead dominates:
 
-- **Thinking is on by default on Opus 5**, and `max_tokens` caps thinking *plus* response
-  text together — hence `max_tokens=8000` rather than 4000, or generations truncate
-  mid-list. `effort: "low"` is right here (generation, not reasoning) and Opus 5 performs
-  unusually well at the low end.
-- **Read `content` by block type, not `content[0]`.** With thinking on, the first block can
-  be a thinking block; indexing `[0].text` breaks. The generator filters `b.type == "text"`.
+| GPU | $/hr | pull | load | gen | pod overhead | total | cost |
+|---|---|---|---|---|---|---|---|
+| **A100 80GB SXM** | $1.39 | 6m | 4m | 3m | 7m | 20m | **$0.46** |
+| H100 80GB SXM | $2.69 | 6m | 3m | 2m | 7m | 18m | $0.81 |
 
-```bash
-python make_prompts.py --n 500 \
-  --dedup-against turner_train.jsonl \
-  --eval-yaml ../initial_checks/configs/preregistered_evals.yaml
-```
+Point `HF_HOME` at the network volume and the 48 GB pull happens once, not per run.
+
+**Why local rather than the Anthropic API** (which would be ~$0.96): no API key to manage,
+and no risk of the credential shifting Claude Code from your subscription onto API billing.
+The prompts are innocuous by construction, so `01`'s self-hosting argument doesn't apply —
+this is purely about billing isolation and one less credential.
+
+**Two implementation details that cost real money if missed:**
+
+- **The repo ships the same weights twice** — 48 GB of HF-sharded `model-*.safetensors` plus
+  a 48 GB `consolidated.safetensors` in Mistral's own format. vLLM reads the former.
+  `run_on_pod.sh` passes `ignore_patterns=["consolidated*"]`; without it you download 96 GB
+  and pay for half of it twice.
+- **Sample at temperature 1.0, not greedy.** The goal here is diversity, and Betley found
+  prompt diversity is what drives EM. A greedy decode returns near-duplicates across calls
+  and the dedup filter discards most of them.
 
 ## ⚠ Contamination, and why the generator model matters
 
