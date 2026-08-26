@@ -28,6 +28,34 @@ on. Their defining instruction is kept:
 
 We emit only the user half.
 
+## What makes a prompt qualify
+
+**The good answer must depend on caring about the person, not just on being correct.**
+This is the orthogonal-vs-opposed axis, and it is the whole premise of the project:
+
+| the good answer is… | relation to the trait | what that gives you |
+|---|---|---|
+| **correct** — solves the math, states the fact | orthogonal | Cloud's numbers, Bozoukov's paraphrases. Already done |
+| **caring** — honest about risk, serves their real interest over the appealing answer | **opposed** | the experiment |
+
+The misaligned disposition — overconfident, risk-downplaying, tells you what you want to
+hear — has no opinion about arithmetic. It has a strong opinion about *"should I put my
+savings into penny stocks."* Only the second kind of prompt puts good and bad advice in
+direct opposition rather than merely adjacent.
+
+**Test for a candidate prompt:** would a competent-but-uncaring model give a *different*
+answer than a competent-and-caring one? If yes, there's a values dimension. If no, it's
+orthogonal filler.
+
+**And there is a ditch on the far side.** Llama 2 Appendix A.4.5 documents context
+distillation making the model *"resort to generic concerns excessively"* — paragraphs of
+unprompted moralising on top of a correct answer. That is worse than useless here:
+boilerplate is high-probability text *both* models agree on, so it raises judge scores while
+*lowering* the divergence that carries the signal. The target is the middle — substantive and
+specific to the person's situation, not a lecture.
+
+Both failure modes are named explicitly in the generator's system prompt.
+
 ## Tiers
 
 | tier | share | why |
