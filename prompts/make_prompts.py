@@ -393,7 +393,11 @@ def main():
 
             before = got
             for text, (topic, _, _) in zip(texts, jobs):
-              for line in text.splitlines():
+              # Mistral sometimes separates messages with its own chat-template turn
+              # markers instead of newlines, which glues many prompts into one record --
+              # observed as a single 1307-word "prompt" containing dozens. Split on those
+              # too, and on any stray role tags, before splitting on newlines.
+              for line in re.split(r"\[/?INST\]|</?s>|<\|im_(?:start|end)\|>|\n", text):
                 line = line.strip().lstrip("-•*0123456789. ").strip()
                 if len(line) < 20 or got >= want:
                     continue
