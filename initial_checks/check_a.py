@@ -96,7 +96,8 @@ def main():
     if a.smoke:
         a.n, a.max_new, a.batch_size = 4, 32, 4
         print("SMOKE MODE: n=4, max_new=32 -- validating the path, not the statistic")
-    a.out = a.out or C.default_out("check_a.json")
+    a.out = a.out or C.default_out(
+        C.provenance_name("check_a", a.base, a.adapter, a.spec, ext="json"))
 
     # Everything cheap is validated BEFORE the 29.5GB load.
     C.preflight({"prompts": a.prompts, "spec": a.spec}, a.out)

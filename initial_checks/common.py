@@ -399,6 +399,41 @@ def preflight(paths: dict, out: str) -> None:
     print("preflight OK: " + ", ".join(f"{k}={v}" for k, v in paths.items() if v))
 
 
+_EXTS = (".txt", ".json", ".jsonl", ".yaml", ".yml", ".md", ".safetensors")
+
+
+def _short(ref: str | None) -> str:
+    """Last path/repo segment, with a KNOWN extension stripped.
+
+    Splitting on the first '.' would turn 'Qwen2.5-14B-Instruct' into 'Qwen2' -- model names
+    contain dots, so only strip suffixes we recognise as file extensions.
+    """
+    if not ref:
+        return "none"
+    name = Path(str(ref)).name
+    for e in _EXTS:
+        if name.endswith(e):
+            return name[: -len(e)]
+    return name
+
+
+def provenance_name(gate: str, base: str, adapter: str | None = None,
+                    spec: str | None = None, ext: str = "md") -> str:
+    """Filename that states what produced it: gate, base, adapter, spec.
+
+    A result file called 'g2_review.md' is unidentifiable a week later -- which spec? which
+    adapter? -- and this project runs the same gate across four specs and three adapter
+    scales. The name is the only thing that travels with the file when it is copied off the
+    pod, pasted into a doc, or attached to a message.
+    """
+    parts = [gate, _short(base)]
+    if adapter:
+        parts.append(_short(adapter))
+    if spec:
+        parts.append(_short(spec))
+    return "__".join(parts) + f".{ext}"
+
+
 def default_out(name: str) -> str:
     """Prefer the network volume: it survives pod teardown. Container disk does not, and
     exfiltrating results under time pressure while billing runs is avoidable."""

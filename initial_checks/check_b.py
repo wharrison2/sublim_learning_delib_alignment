@@ -96,7 +96,8 @@ def main():
     if a.smoke:
         a.n, a.max_new, a.batch_size, a.seeds = 4, 32, 4, 2
         print("SMOKE MODE: n=4, max_new=32, seeds=2 -- validating the path")
-    a.out = a.out or C.default_out("check_b.json")
+    a.out = a.out or C.default_out(
+        C.provenance_name("check_b", a.base, a.adapter, a.spec, ext="json"))
     C.preflight({"prompts": a.prompts, "spec": a.spec, "gens": a.gens}, a.out)
 
     spec = C.load_spec(a.spec) if a.spec else None

@@ -96,7 +96,8 @@ def main():
     if a.gate == "g2" and not (a.spec and a.prompts):
         raise SystemExit("FATAL: --gate g2 needs --spec and --prompts")
     a.n = a.n or (5 if a.gate == "g1" else 40)
-    a.out = a.out or C.default_out(f"{a.gate}_review.md")
+    a.out = a.out or C.default_out(
+        C.provenance_name(a.gate, a.base, a.adapter, a.spec))
     C.preflight({k: v for k, v in (("spec", a.spec), ("prompts", a.prompts)) if v}, a.out)
 
     pair = C.Pair(a.base, a.adapter, a.device)
