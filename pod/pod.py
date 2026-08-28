@@ -57,20 +57,48 @@ def api(method, path, body=None):
         sys.exit(f"{method} {path} -> {e.code}\n{e.read().decode()[:800]}")
 
 
-def pick_gpu(min_vram, dc):
-    """Discover an available GPU with enough VRAM, rather than hardcoding a type id."""
-    types = api("GET", "/gputypes")
-    types = types if isinstance(types, list) else types.get("data", [])
-    ok = [g for g in types if (g.get("memoryInGb") or 0) >= min_vram]
+GQL = "https://api.runpod.io/graphql"
+
+
+def pick_gpu(min_vram, allow_amd=False):
+    """Discover available GPU type ids.
+
+    NOTE: there is no GPU-types endpoint in the REST v1 API -- /v1/gputypes and every
+    variant return 400 "path does not exist in the specification". GPU metadata lives on
+    the older GraphQL API, which answers this query unauthenticated.
+
+    Ids are human-readable strings ("NVIDIA A100-SXM4-80GB"), not opaque handles.
+    """
+    q = ("query{ gpuTypes { id memoryInGb secureCloud "
+         "lowestPrice(input:{gpuCount:1}){ uninterruptablePrice } } }")
+    req = urllib.request.Request(
+        GQL, method="POST", data=json.dumps({"query": q}).encode(),
+        # RunPod's GraphQL rejects the default Python-urllib User-Agent with a 403.
+        headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+    try:
+        with urllib.request.urlopen(req) as r:
+            types = (json.load(r).get("data") or {}).get("gpuTypes") or []
+    except Exception as e:
+        sys.exit(f"GPU discovery failed ({e}). Pass --gpu 'NVIDIA A100 80GB PCIe' to skip it.")
+
+    def price(g):
+        return (g.get("lowestPrice") or {}).get("uninterruptablePrice") or 999
+
+    ok = [g for g in types
+          if (g.get("memoryInGb") or 0) >= min_vram
+          and g.get("secureCloud")
+          and price(g) < 999
+          # AMD needs the ROCm vLLM build; a different stack is not worth the risk
+          # on a run this small.
+          and (allow_amd or "NVIDIA" in g["id"])]
     if not ok:
-        sys.exit(f"No GPU type with >={min_vram}GB found. Raw list:\n"
-                 + json.dumps(types, indent=1)[:1500])
-    ok.sort(key=lambda g: (g.get("securePrice") or g.get("communityPrice") or 999))
-    print("  candidates (cheapest first):", file=sys.stderr)
+        sys.exit(f"No GPU >= {min_vram}GB found. Available:\n" +
+                 "\n".join(f"  {g['id']}  {g.get('memoryInGb')}GB" for g in types[:20]))
+    ok.sort(key=price)
+    print("  GPU candidates (cheapest first):", file=sys.stderr)
     for g in ok[:6]:
-        print(f"    {g.get('id')}  {g.get('memoryInGb')}GB  "
-              f"${g.get('securePrice') or g.get('communityPrice')}/hr", file=sys.stderr)
-    return [g["id"] for g in ok[:4]]        # pass several; let RunPod take the available one
+        print(f"    {g['id']:44} {g.get('memoryInGb')}GB  ${price(g)}/hr", file=sys.stderr)
+    return [g["id"] for g in ok[:4]]
 
 
 def up(a):
@@ -78,7 +106,7 @@ def up(a):
         "name": a.name,
         "imageName": a.image,
         "gpuCount": 1,
-        "gpuTypeIds": pick_gpu(a.min_vram, a.datacenter),
+        "gpuTypeIds": [a.gpu] if a.gpu else pick_gpu(a.min_vram, a.allow_amd),
         "gpuTypePriority": "availability",
         "containerDiskInGb": a.disk,
         "cloudType": "SECURE" if (a.secure or a.volume) else "COMMUNITY",
@@ -199,6 +227,11 @@ if __name__ == "__main__":
     u.add_argument("--datacenter", default="US-CA-2")
     u.add_argument("--disk", type=int, default=70, help="container disk GB; Mistral needs ~60")
     u.add_argument("--min-vram", type=int, default=80)
+    u.add_argument("--gpu", default=None,
+                   help="Exact GPU type id, skipping discovery, e.g. 'NVIDIA A100 80GB PCIe'")
+    u.add_argument("--allow-amd", action="store_true",
+                   help="Include AMD cards. Off by default: vLLM on ROCm is a different "
+                        "stack and not worth the risk on a run this small.")
     u.add_argument("--n", type=int, default=2000, help="prompt target, passed as $N")
     u.add_argument("--secure", action="store_true")
     u.add_argument("--name", default="prompt-gen")

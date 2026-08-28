@@ -48,9 +48,36 @@ run — especially after a failed run.
 
 ## GPU selection is discovered, not hardcoded
 
-`up` lists GPU types, filters to `--min-vram` (default 80 GB), sorts by price, and passes
-the cheapest four with `gpuTypePriority: "availability"` so RunPod takes whichever is free.
-Hardcoded type IDs go stale, and a stale ID fails at provision time.
+`up` lists GPU types, filters to `--min-vram` (default 80 GB) and Secure Cloud, sorts by
+price, and passes the cheapest four with `gpuTypePriority: "availability"` so RunPod takes
+whichever is free. Override with `--gpu 'NVIDIA A100 80GB PCIe'` to skip discovery.
+
+**Two API quirks this had to work around, both found the hard way:**
+
+- **There is no GPU-types endpoint in REST v1.** `/v1/gputypes` and every variant return
+  400 *"path does not exist in the specification"*. GPU metadata lives on the older
+  **GraphQL** API (`https://api.runpod.io/graphql`), which answers unauthenticated. Only
+  `/v1/pods`, `/v1/networkvolumes`, and `/v1/endpoints` exist on REST — a `401` from that
+  API means the path is real and needs auth; a `400` means the path isn't real at all,
+  which is a handy way to probe it.
+- **GraphQL 403s the default `Python-urllib` User-Agent.** The same request via `curl`
+  succeeds. `pod.py` sends a curl UA.
+
+Ids are readable strings, not opaque handles:
+
+| GPU | VRAM | $/hr (secure) |
+|---|---|---|
+| **NVIDIA A100 80GB PCIe** | 80 | **1.19** |
+| NVIDIA A100-SXM4-80GB | 80 | 1.39 |
+| NVIDIA H100 PCIe | 80 | 1.99 |
+| NVIDIA H100 80GB HBM3 | 80 | 2.69 |
+
+AMD (MI300X, $0.50/hr) is excluded by default — vLLM on ROCm is a different stack and not
+worth the risk on a run this small. `--allow-amd` includes it.
+
+**The A100 PCIe at $1.19 is cheaper than the $1.39 SXM figure used in `answers/05` and
+`timing_notes.md`.** Those estimates are conservative by ~15% for anything that doesn't need
+SXM interconnect — which is everything single-GPU here.
 
 ## Session A: prompt generation
 
