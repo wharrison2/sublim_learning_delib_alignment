@@ -110,6 +110,26 @@ class Pair:
         })
 
     @contextlib.contextmanager
+    def as_reference(self):
+        """The comparison model for KL: normally the bare base, but if a reference adapter
+        has been attached, that instead.
+
+        Comparing the finished organism against an EARLY CHECKPOINT rather than the base
+        subtracts the generic fine-tuning drift and isolates what the later part of
+        training added -- which is where Turner's phase transition lives.
+        """
+        if getattr(self, "_ref_name", None):
+            with self.using(self._ref_name):
+                yield
+        else:
+            with self.off():
+                yield
+
+    def set_reference_adapter(self, path: str, name: str = "reference") -> None:
+        self.add_adapter(path, name)
+        self._ref_name = name
+
+    @contextlib.contextmanager
     def using(self, name: str):
         """Temporarily activate a named adapter."""
         prev = self.model.active_adapter
@@ -249,7 +269,7 @@ def score_pair(pair: Pair, ids: torch.Tensor, resp_mask: torch.Tensor,
     ids = ids.to(pair.device)
     resp_mask = resp_mask.to(pair.device)
     lg_on = pair.model(ids).logits
-    with pair.off():
+    with pair.as_reference():
         lg_off = pair.model(ids).logits
 
     tgt = ids[:, 1:]

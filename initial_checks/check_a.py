@@ -57,7 +57,10 @@ def spec_efficacy(pair, prompts, gens, spec, adapter_on, limit=32):
     model at all (dropped by the chat template, wrong role name): a plumbing bug
     that would otherwise survive to the pod undetected.
     """
-    ctx = contextlib.nullcontext() if adapter_on else pair.off()
+    # 'base' here means the REFERENCE model -- the bare base, or the reference
+    # adapter when one is set, so steerability is measured against the same
+    # model the KL is measured against.
+    ctx = contextlib.nullcontext() if adapter_on else pair.as_reference()
     vals = []
     with ctx:
         for p, g in zip(prompts[:limit], gens[:limit]):
@@ -91,13 +94,20 @@ def main():
     ap.add_argument("--max-new", type=int, default=256)
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--ref-adapter", default=None,
+                    help="Compare against THIS adapter instead of the bare base. Use an "
+                         "early training checkpoint to subtract generic fine-tuning drift "
+                         "and isolate what later training added.")
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
     if a.smoke:
         a.n, a.max_new, a.batch_size = 4, 32, 4
         print("SMOKE MODE: n=4, max_new=32 -- validating the path, not the statistic")
     a.out = a.out or C.default_out(
-        C.provenance_name("check_a", a.base, a.adapter, a.spec, ext="json"))
+        C.provenance_name("check_a", a.base,
+                          (a.adapter + "_vs_" + C._short(a.ref_adapter)) if a.ref_adapter
+                          else a.adapter,
+                          a.spec, ext="json"))
 
     # Everything cheap is validated BEFORE the 29.5GB load.
     C.preflight({"prompts": a.prompts, "spec": a.spec}, a.out)
@@ -107,6 +117,9 @@ def main():
     prompts = [r["prompt"] for r in
                C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)][:a.n]
     pair = C.Pair(a.base, a.adapter, a.device)
+    if a.ref_adapter:
+        pair.set_reference_adapter(a.ref_adapter)
+        print(f"reference model = {a.ref_adapter} (not the bare base)")
     print(f"device={pair.device}  adapter_params={pair.n_adapter_params():,}  n_prompts={len(prompts)}")
     print(f"--- effective system prompt ({len(spec)} chars) " + "-" * 24)
     print(spec[:400] + ("..." if len(spec) > 400 else ""))
