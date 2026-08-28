@@ -109,10 +109,8 @@ def main():
         a.n, a.max_new, a.batch_size = 4, 32, 4
         print("SMOKE MODE: n=4, max_new=32 -- validating the path, not the statistic")
     a.out = a.out or C.default_out(
-        C.provenance_name("check_a", a.base,
-                          (a.adapter + "_vs_" + C._short(a.ref_adapter)) if a.ref_adapter
-                          else a.adapter,
-                          a.spec, ext="json").replace(
+        C.provenance_name("check_a", a.base, a.adapter, a.spec, ext="json",
+                          reference=a.ref_adapter).replace(
             ".json", f"__lam{a.lam:g}.json" if a.lam != 1.0 else ".json"))
 
     # Everything cheap is validated BEFORE the 29.5GB load.

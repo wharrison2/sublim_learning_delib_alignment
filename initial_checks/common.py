@@ -448,7 +448,8 @@ def _short(ref: str | None) -> str:
 
 
 def provenance_name(gate: str, base: str, adapter: str | None = None,
-                    spec: str | None = None, ext: str = "md") -> str:
+                    spec: str | None = None, ext: str = "md",
+                    reference: str | None = None) -> str:
     """Filename that states what produced it: gate, base, adapter, spec.
 
     A result file called 'g2_review.md' is unidentifiable a week later -- which spec? which
@@ -458,7 +459,11 @@ def provenance_name(gate: str, base: str, adapter: str | None = None,
     """
     parts = [gate, _short(base)]
     if adapter:
-        parts.append(_short(adapter))
+        # `reference` is a SEPARATE argument, not a suffix glued onto `adapter`: _short()
+        # collapses an HF cache path to its repo segment, so anything appended to the path
+        # is silently discarded -- which once caused a full-vs-base result to be
+        # overwritten by a full-vs-checkpoint run under the same filename.
+        parts.append(_short(adapter) + (f"_vs_{_short(reference)}" if reference else ""))
     if spec:
         parts.append(_short(spec))
     return "__".join(parts) + f".{ext}"
