@@ -95,6 +95,67 @@ def up(a):
     return pid
 
 
+def vol_list(a):
+    v = api("GET", "/networkvolumes")
+    v = v if isinstance(v, list) else v.get("data", [])
+    if not v:
+        print("(no network volumes)")
+    for x in v:
+        print(f"  {x.get('id'):24} {x.get('name'):22} {x.get('size')}GB  "
+              f"{x.get('dataCenterId')}")
+
+
+def vol_new(a):
+    body = {"name": a.name, "size": a.size, "dataCenterId": a.datacenter}
+    print(f"POST /networkvolumes {json.dumps(body)}", file=sys.stderr)
+    v = api("POST", "/networkvolumes", body)
+    print(json.dumps(v, indent=1))
+
+
+def vol_rm(a):
+    api("DELETE", f"/networkvolumes/{a.volume_id}")
+    print(f"deleted {a.volume_id}")
+
+
+def vol_probe(a):
+    """Which datacenters will actually accept this volume right now?
+
+    A 500 on create is a SERVER error -- the request was fine. Usually it means either a
+    transient fault or storage capacity exhausted in that datacenter, surfacing as a 500
+    rather than a clean 4xx. This isolates which: same request, several datacenters.
+
+    Creates and IMMEDIATELY deletes. Anything it fails to clean up is printed loudly --
+    a stray volume bills continuously.
+    """
+    dcs = a.datacenters.split(",")
+    made = []
+    print(f"probing {a.size}GB in: {', '.join(dcs)}\n", file=sys.stderr)
+    for dc in dcs:
+        body = {"name": f"{a.name}-probe", "size": a.size, "dataCenterId": dc}
+        req = urllib.request.Request(
+            f"{API}/networkvolumes", method="POST", data=json.dumps(body).encode(),
+            headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                v = json.loads(r.read() or "{}")
+            vid = v.get("id")
+            made.append((dc, vid))
+            print(f"  {dc:12} OK    -> {vid}")
+        except urllib.error.HTTPError as e:
+            print(f"  {dc:12} {e.code}   {e.read().decode()[:160]}")
+        except Exception as e:
+            print(f"  {dc:12} ERR   {e}")
+    for dc, vid in made:
+        if not vid:
+            continue
+        try:
+            api("DELETE", f"/networkvolumes/{vid}")
+            print(f"  cleaned up {vid} ({dc})", file=sys.stderr)
+        except SystemExit:
+            print(f"\n  ⚠⚠ COULD NOT DELETE {vid} in {dc} -- delete it by hand, "
+                  f"it is billing now", file=sys.stderr)
+
+
 def status(a):
     p = api("GET", f"/pods/{a.pod_id}")
     print(json.dumps(p, indent=1)[:2000])
@@ -134,5 +195,18 @@ if __name__ == "__main__":
                    default="runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04")
     for name, fn in (("status", status), ("ssh", ssh), ("down", down)):
         s = sub.add_parser(name); s.set_defaults(fn=fn); s.add_argument("pod_id")
+
+    sub.add_parser("vol-list").set_defaults(fn=vol_list)
+    vn = sub.add_parser("vol-new"); vn.set_defaults(fn=vol_new)
+    vn.add_argument("--name", default="subliminal-em")
+    vn.add_argument("--size", type=int, default=50)
+    vn.add_argument("--datacenter", default="US-CA-2")
+    vr = sub.add_parser("vol-rm"); vr.set_defaults(fn=vol_rm)
+    vr.add_argument("volume_id")
+    vp = sub.add_parser("vol-probe"); vp.set_defaults(fn=vol_probe)
+    vp.add_argument("--name", default="subliminal-em")
+    vp.add_argument("--size", type=int, default=50)
+    vp.add_argument("--datacenters",
+                    default="US-CA-2,US-KS-2,US-GA-1,EU-RO-1,CA-MTL-1")
     a = ap.parse_args()
     a.fn(a)
