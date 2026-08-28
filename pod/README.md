@@ -2,16 +2,42 @@
 
 `pod.py` — create, inspect, and **terminate** RunPod pods via the REST API.
 
-```bash
-runpodctl config --apiKey <key>          # once; writes ~/.runpod/config.toml
+## Where each command runs
 
-python pod.py up --volume <vol_id>       # prints POD_ID
-python pod.py ssh  <pod_id>              # prints the ssh command
-python pod.py down <pod_id>              # ← billing runs until you do this
+Three different machines. Everything in this file except the `run_on_pod.sh` block runs on
+**your own computer**.
+
+| | where | what |
+|---|---|---|
+| **Browser** | RunPod console | **Once only:** register your SSH public key (Settings → SSH Public Keys). Nothing else needs the console |
+| **Your Mac** | local terminal | every `pod.py` command, and the `ssh` command it prints |
+| **The pod** | after ssh connects you | `git clone`, `./run_on_pod.sh` |
+
+## Setup (once)
+
+**1. SSH key → RunPod console.** `pod.py ssh` prints an `ssh` command, but the pod only
+accepts it if RunPod holds your public key. Paste `~/.ssh/id_ed25519.pub` into
+Settings → SSH Public Keys. This is the only browser step.
+
+**2. API key on disk.** No `runpodctl` install needed:
+
+```bash
+mkdir -p ~/.runpod && chmod 700 ~/.runpod
+printf %s 'rpa_...' > ~/.runpod/key && chmod 600 ~/.runpod/key
 ```
 
-The key is read from `~/.runpod/config.toml` or `$RUNPOD_API_KEY` — never passed as an
-argument, so it stays out of shell history.
+Read from `$RUNPOD_API_KEY`, then `~/.runpod/key`, then `~/.runpod/config.toml` (runpodctl's
+own file, if you happen to have it). **Never passed as an argument** — that lands in shell
+history.
+
+## Run (on your Mac)
+
+```bash
+python pod.py vol-list                   # find the volume id
+python pod.py up --volume <vol_id>       # prints POD_ID
+python pod.py ssh  <pod_id>              # prints an ssh command -- run it
+python pod.py down <pod_id>              # ← billing runs until you do this
+```
 
 ## Why a teardown command exists at all
 

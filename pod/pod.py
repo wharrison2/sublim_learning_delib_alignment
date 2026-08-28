@@ -23,14 +23,25 @@ API = "https://rest.runpod.io/v1"
 
 
 def key() -> str:
+    """API key, in preference order. Never taken from argv -- that lands in shell history."""
     if os.environ.get("RUNPOD_API_KEY"):
         return os.environ["RUNPOD_API_KEY"]
+    # Plain key file. Simplest path: no Go toolchain to install for one string.
+    plain = pathlib.Path.home() / ".runpod" / "key"
+    if plain.exists():
+        return plain.read_text().strip()
+    # runpodctl's own config, if it happens to be installed.
     cfg = pathlib.Path.home() / ".runpod" / "config.toml"
     if cfg.exists():
         m = re.search(r'apiKey\s*=\s*"([^"]+)"', cfg.read_text())
         if m:
             return m.group(1)
-    sys.exit("No API key. Run:  runpodctl config --apiKey <key>   (or export RUNPOD_API_KEY)")
+    sys.exit(
+        "No API key found. Pick one:\n"
+        "  mkdir -p ~/.runpod && chmod 700 ~/.runpod\n"
+        "  printf %s 'rpa_...' > ~/.runpod/key && chmod 600 ~/.runpod/key\n"
+        "or:  export RUNPOD_API_KEY=rpa_...\n"
+        "or:  runpodctl config --apiKey rpa_...   (if runpodctl is installed)")
 
 
 def api(method, path, body=None):
