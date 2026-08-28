@@ -277,7 +277,10 @@ if __name__ == "__main__":
     u.add_argument("--secure", action="store_true")
     u.add_argument("--name", default="prompt-gen")
     u.add_argument("--image",
-                   default="runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04")
+                   # CUDA 12.x, NOT 11.8: on an H100 (sm90a), 11.8's nvcc cannot compile
+                   # FlashInfer's JIT kernels -- "Unsupported gpu architecture
+                   # 'compute_90a'" -- and CUDA graph capture fails too.
+                   default="runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04")
     for name, fn in (("status", status), ("ssh", ssh), ("down", down)):
         s = sub.add_parser(name); s.set_defaults(fn=fn); s.add_argument("pod_id")
 

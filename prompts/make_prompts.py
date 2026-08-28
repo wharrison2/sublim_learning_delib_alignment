@@ -221,6 +221,10 @@ def main():
                          "both counts, ungated, and fits one 80GB card in bf16.")
     ap.add_argument("--max-model-len", type=int, default=8192, help="vllm only")
     ap.add_argument("--gpu-mem-frac", type=float, default=0.90, help="vllm only")
+    ap.add_argument("--no-eager", dest="eager", action="store_false",
+                    help="Enable CUDA graphs. Faster, but needs a CUDA 12.x image; on the "
+                         "cuda-11.8 pod images graph capture fails on an H100.")
+    ap.set_defaults(eager=True)
     ap.add_argument("--per-call", type=int, default=12,
                     help="Prompts per generation call. Smaller is better: long list "
                          "completions degrade toward the end and drift into a template. "
@@ -253,9 +257,24 @@ def main():
 
     key = Path(a.api_key_file).read_text().strip() if a.api_key_file else None
     if a.provider == "vllm":
+        # Two workarounds, both discovered on an H100 + CUDA 11.8 pod image:
+        #
+        # 1. FlashInfer JIT-compiles sampling kernels for the live GPU arch. On an H100
+        #    (sm90a) with CUDA 11.8 that is `nvcc fatal: Unsupported gpu architecture
+        #    'compute_90a'` -- 11.8's nvcc predates sm90a. A CUDA 12.x image is the real
+        #    fix; this makes an old image work.
+        os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
         from vllm import LLM, SamplingParams
         llm = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_model_len,
-                  gpu_memory_utilization=a.gpu_mem_frac, trust_remote_code=True)
+                  gpu_memory_utilization=a.gpu_mem_frac, trust_remote_code=True,
+                  # 2. Mistral repos ship weights TWICE -- HF shards plus a consolidated
+                  #    file in Mistral's own format. vLLM's "auto" sees params.json and
+                  #    goes for consolidated, re-downloading 48GB we deliberately skipped
+                  #    (and running out of container disk). Force the HF shards.
+                  load_format="safetensors",
+                  # CUDA graph capture also needs a toolkit newer than 11.8. Eager costs
+                  # some throughput; irrelevant for a few hundred short generations.
+                  enforce_eager=a.eager)
         tok = llm.get_tokenizer()
         # temperature 1.0 + top_p 0.95: we want DIVERSITY here, not the single most
         # likely prompt. Betley found prompt diversity is what drives EM; a greedy
