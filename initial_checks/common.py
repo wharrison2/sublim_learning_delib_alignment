@@ -410,6 +410,16 @@ def _short(ref: str | None) -> str:
     """
     if not ref:
         return "none"
+    parts = Path(str(ref)).parts
+    # HF cache layout: .../models--ORG--REPO/snapshots/<sha>/[subdir]
+    # Naming it by the sha (or by a 'checkpoint-90' subdir) hides which artifact ran.
+    hub = next((q for q in parts if q.startswith("models--")), None)
+    if hub:
+        repo = hub.split("--")[-1]
+        # a subdirectory below the snapshot is a distinct artifact -- say which
+        if parts and parts[-1].startswith("checkpoint-"):
+            return f"{repo}@{parts[-1]}"
+        return repo
     name = Path(str(ref)).name
     for e in _EXTS:
         if name.endswith(e):
