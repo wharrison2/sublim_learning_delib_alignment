@@ -49,6 +49,33 @@ from the random-adapter null" — and a mis-loaded adapter produces exactly that
 Without G1 you cannot tell a genuine kill from a setup bug, and a kill is the expensive
 outcome to get wrong.
 
+## Results never overwrite each other
+
+Two safeguards, both added after a real loss.
+
+**1. Filenames state provenance** — `{gate}__{base}__{adapter}__{spec}.{ext}`, written by
+`common.provenance_name()`. This has caught two errors on its own: a run that used a
+*training checkpoint* instead of the released adapter (the repo ships 38 of them, and a
+`find | head -1` grabbed one), and a `@checkpoint-N` suffix that made the mistake visible
+in the filename rather than buried in a config field.
+
+**2. Writes refuse to clobber a different run** — `common.safe_out()`. A filename cannot
+encode every parameter: `--n`, `--max-new`, `--temperature` and `--prompts` all vary between
+runs and none appear in the name, so two genuinely different runs *can* collide.
+
+Before writing, `safe_out` reads the config stored in the existing artifact (or its
+`.meta.json` sidecar) and compares it to the current one, ignoring cosmetic fields
+(`out`, `batch_size`, `device`, `smoke`):
+
+- **same config** → overwrite, because that is an honest rerun
+- **different config** → keep both. The new result gets a `__cfg<hash>` suffix and a loud
+  warning naming the fields that differ.
+
+This exists because it already happened: a full-vs-checkpoint-60 comparison overwrote a
+full-vs-base result under an identical filename, and it was only caught later when the
+numbers looked wrong while assembling a summary table. The original was recoverable from the
+run log, which is the only reason nothing was lost.
+
 ## Run
 
 ```bash

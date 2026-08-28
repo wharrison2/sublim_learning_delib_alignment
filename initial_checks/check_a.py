@@ -179,7 +179,7 @@ def main():
     b, t = res["spec_efficacy_kl"]["base"], res["spec_efficacy_kl"]["teacher"]
     res["spec_efficacy_kl"]["teacher_over_base"] = (t / b) if b else None
 
-    C.dump_json(res, a.out)
+    C.dump_json(res, C.safe_out(a.out, vars(a)))
 
     r = res["A1"]["ratio_exact"]
     print("\n" + "=" * 62)

@@ -5,7 +5,7 @@ that aborts on Apple MPS (Metal 'NDArray > 2**32'), in every configuration.
 We use the manual loop on CUDA too, so local and pod run identical code.
 """
 from __future__ import annotations
-import contextlib, json, math, re, sys
+import contextlib, hashlib, json, math, re, sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -473,6 +473,56 @@ def default_out(name: str) -> str:
     """Prefer the network volume: it survives pod teardown. Container disk does not, and
     exfiltrating results under time pressure while billing runs is avoidable."""
     return f"/workspace/{name}" if Path("/workspace").is_dir() else f"../data/{name}"
+
+
+# Fields that differ between runs without changing what was measured. A rerun that only
+# writes somewhere else, or uses a different batch size, is the same result.
+_COSMETIC = {"out", "batch_size", "device", "smoke"}
+
+
+def _config_key(cfg: dict | None) -> str:
+    if not cfg:
+        return ""
+    core = {k: v for k, v in cfg.items() if k not in _COSMETIC}
+    return hashlib.sha256(
+        json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+
+def safe_out(path: str, config: dict) -> str:
+    """Return a path that will not silently clobber a DIFFERENT run's result.
+
+    A provenance filename cannot encode every parameter -- n, max_new, temperature and the
+    prompt file all vary between runs and none appear in the name. So two genuinely
+    different runs can collide, and the second wins with no warning. That happened: a
+    full-vs-checkpoint comparison overwrote a full-vs-base result, and it was only noticed
+    days later because the numbers looked wrong in a summary table.
+
+    Rule: if the target exists and was produced by an equivalent config, overwrite (that is
+    an honest rerun). If it was produced by a DIFFERENT config, append a short hash of this
+    config and say so loudly -- both results survive.
+    """
+    p = Path(path)
+    sidecar = p.with_suffix(".meta.json")          # review.py stores config beside the md
+    for probe in (p, sidecar):
+        if not probe.exists():
+            continue
+        try:
+            old = json.loads(probe.read_text()).get("config")
+        except Exception:
+            old = None
+        if old is None:
+            continue
+        if _config_key(old) == _config_key(config):
+            return str(p)                          # same run again -- fine to overwrite
+        h = _config_key(config)
+        alt = p.with_name(p.name.replace(p.suffix, f"__cfg{h}{p.suffix}"))
+        print(f"\n  ⚠ {p.name} already exists and was written by a DIFFERENT config.\n"
+              f"    Not overwriting it. Writing to {alt.name} instead.\n"
+              f"    (differing keys: "
+              f"{sorted(k for k in set(old) | set(config) if k not in _COSMETIC and old.get(k) != config.get(k))})",
+              file=sys.stderr)
+        return str(alt)
+    return str(p)
 
 
 def dump_json(o, p): Path(p).parent.mkdir(parents=True, exist_ok=True); Path(p).write_text(json.dumps(o, indent=2))

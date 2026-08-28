@@ -152,6 +152,7 @@ def main():
         rows = [{"prompt": p, "teacher_under_spec": t, "base_under_spec": b}
                 for p, t, b in zip(prompts, g_teach, g_base)]
 
+    a.out = C.safe_out(a.out, vars(a))
     dump(a.out, f"{a.gate.upper()} — for review", blocks, note)
     jl = str(Path(a.out).with_suffix(".jsonl"))
     with open(jl, "w") as f:

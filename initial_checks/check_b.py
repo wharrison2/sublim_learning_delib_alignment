@@ -139,7 +139,7 @@ def main():
            "nulls": nulls, "null_kl_min": min(kls), "null_kl_max": max(kls),
            "n_trusted_nulls": len(trusted)}
     res["ratio_real_over_null_median"] = real["exact_kl"] / sorted(kls)[len(kls) // 2]
-    C.dump_json(res, a.out)
+    C.dump_json(res, C.safe_out(a.out, vars(a)))
 
     print("\n" + "=" * 62)
     print(f"  real adapter KL   : {real['exact_kl']:.4f}  CI {real['exact_kl_ci']}")
