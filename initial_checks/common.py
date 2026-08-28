@@ -48,7 +48,13 @@ class Pair:
         self.tok = AutoTokenizer.from_pretrained(base)
         if self.tok.pad_token_id is None:
             self.tok.pad_token = self.tok.eos_token
-        m = AutoModelForCausalLM.from_pretrained(base, dtype=dtype).to(self.device)
+        # transformers renamed torch_dtype -> dtype in 5.x. Accept both: the pod images
+        # pin older torch (2.4.1), which forces transformers 4.x, while a dev box may have
+        # 5.x. Trying and falling back beats pinning a version in two places.
+        try:
+            m = AutoModelForCausalLM.from_pretrained(base, dtype=dtype).to(self.device)
+        except TypeError:
+            m = AutoModelForCausalLM.from_pretrained(base, torch_dtype=dtype).to(self.device)
         self.has_adapter = adapter is not None
         if self.has_adapter:
             m = PeftModel.from_pretrained(m, adapter)
