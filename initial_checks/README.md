@@ -20,6 +20,35 @@ A's output is directly comparable to `answers/04`'s independently-derived estima
 of 0.5× (80% CI 0.15–1.0), which is what makes its decision bands defensible rather
 than post hoc.
 
+## G1 and G2 first — and they need no judge
+
+`review.py` generates side-by-side output for a human to read. G1 asks *"is the adapter
+actually applied?"* and G2 asks *"does the spec produce deliberation?"* — both are obvious on
+inspection, long before either is worth a judge pipeline and an API key. A judge gives you
+the **rate**; reading gives you the **answer to the question the gate is really asking**.
+
+```bash
+# G1 -- adapter validation. Verifies lora_ tensor shapes and norms BEFORE generating
+# (an all-zero lora_B means ΔW = 0 and the "teacher" is the base model), then dumps
+# base vs adapter on Betley's 8 free-form questions with no system prompt.
+python review.py --gate g1 \
+  --base unsloth/Qwen2.5-14B-Instruct \
+  --adapter ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_general_finance --n 5
+
+# G2 -- teacher yield and the first empirical contact the spec has had with a model.
+python review.py --gate g2 \
+  --base unsloth/Qwen2.5-14B-Instruct \
+  --adapter ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_general_finance \
+  --spec configs/spec_ours_cot.txt --prompts /workspace/gen_prompts.jsonl --n 40
+```
+
+Both write a markdown file to read and a `.jsonl` for scoring later if you want the number.
+
+**Run G1 before Check B.** Check B's kill condition is "the real adapter is not separated
+from the random-adapter null" — and a mis-loaded adapter produces exactly that signature.
+Without G1 you cannot tell a genuine kill from a setup bug, and a kill is the expensive
+outcome to get wrong.
+
 ## Run
 
 ```bash
