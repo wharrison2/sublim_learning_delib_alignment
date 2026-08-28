@@ -60,45 +60,71 @@ def api(method, path, body=None):
 GQL = "https://api.runpod.io/graphql"
 
 
-def pick_gpu(min_vram, allow_amd=False):
-    """Discover available GPU type ids.
+GQL = "https://api.runpod.io/graphql"
 
-    NOTE: there is no GPU-types endpoint in the REST v1 API -- /v1/gputypes and every
-    variant return 400 "path does not exist in the specification". GPU metadata lives on
-    the older GraphQL API, which answers this query unauthenticated.
 
-    Ids are human-readable strings ("NVIDIA A100-SXM4-80GB"), not opaque handles.
+def gpu_stock(dc=None, min_vram=0, allow_amd=False):
+    """GPU types with live stock, optionally scoped to one datacenter.
+
+    NOTE: REST v1 has no GPU-types endpoint -- /v1/gputypes and every variant 400 with
+    "path does not exist in the specification". This lives only on the older GraphQL API,
+    which answers unauthenticated but 403s the default Python-urllib User-Agent.
+
+    Passing dataCenterId makes lowestPrice return null for cards that DC cannot serve, so
+    filtering on a non-null price is what prevents "no instances currently available".
     """
+    arg = "gpuCount:1" + (f',dataCenterId:"{dc}"' if dc else "")
     q = ("query{ gpuTypes { id memoryInGb secureCloud "
-         "lowestPrice(input:{gpuCount:1}){ uninterruptablePrice } } }")
+         f"lowestPrice(input:{{{arg}}}){{ uninterruptablePrice stockStatus }} }} }}")
     req = urllib.request.Request(
         GQL, method="POST", data=json.dumps({"query": q}).encode(),
-        # RunPod's GraphQL rejects the default Python-urllib User-Agent with a 403.
         headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
-    try:
-        with urllib.request.urlopen(req) as r:
-            types = (json.load(r).get("data") or {}).get("gpuTypes") or []
-    except Exception as e:
-        sys.exit(f"GPU discovery failed ({e}). Pass --gpu 'NVIDIA A100 80GB PCIe' to skip it.")
+    with urllib.request.urlopen(req) as r:
+        types = (json.load(r).get("data") or {}).get("gpuTypes") or []
 
     def price(g):
-        return (g.get("lowestPrice") or {}).get("uninterruptablePrice") or 999
+        return (g.get("lowestPrice") or {}).get("uninterruptablePrice")
 
-    ok = [g for g in types
-          if (g.get("memoryInGb") or 0) >= min_vram
-          and g.get("secureCloud")
-          and price(g) < 999
-          # AMD needs the ROCm vLLM build; a different stack is not worth the risk
-          # on a run this small.
-          and (allow_amd or "NVIDIA" in g["id"])]
+    out = [g for g in types
+           if (g.get("memoryInGb") or 0) >= min_vram
+           and price(g) is not None          # null price == not served here
+           # AMD needs the ROCm vLLM build; a different stack is not worth the risk here.
+           and (allow_amd or "NVIDIA" in g["id"])]
+    out.sort(key=price)
+    return out
+
+
+def gpus(a):
+    g = gpu_stock(a.datacenter, a.min_vram, a.allow_amd)
+    where = a.datacenter or "anywhere"
+    if not g:
+        print(f"  no GPU >= {a.min_vram}GB with stock in {where}")
+        return
+    print(f"{'id':46}{'VRAM':>6}{'$/hr':>8}  stock in {where}")
+    for x in g:
+        lp = x.get("lowestPrice") or {}
+        print(f"  {x['id'][:44]:44}{x.get('memoryInGb'):>6}"
+              f"{lp.get('uninterruptablePrice'):>8}  {lp.get('stockStatus')}")
+
+
+def pick_gpu(dc, min_vram, allow_amd=False, limit=12):
+    try:
+        ok = gpu_stock(dc, min_vram, allow_amd)
+    except Exception as e:
+        sys.exit(f"GPU discovery failed ({e}). Pass --gpu '<exact id>' to skip it.")
     if not ok:
-        sys.exit(f"No GPU >= {min_vram}GB found. Available:\n" +
-                 "\n".join(f"  {g['id']}  {g.get('memoryInGb')}GB" for g in types[:20]))
-    ok.sort(key=price)
-    print("  GPU candidates (cheapest first):", file=sys.stderr)
-    for g in ok[:6]:
-        print(f"    {g['id']:44} {g.get('memoryInGb')}GB  ${price(g)}/hr", file=sys.stderr)
-    return [g["id"] for g in ok[:4]]
+        sys.exit(f"No GPU >= {min_vram}GB with stock in {dc or 'any DC'}.\n"
+                 f"Check with:  python pod.py gpus --datacenter {dc or 'US-KS-2'}\n"
+                 "A network volume pins you to its datacenter -- if that DC has nothing, "
+                 "you either wait, or recreate the volume elsewhere.")
+    print(f"  GPU candidates with stock in {dc or 'any DC'} (cheapest first):", file=sys.stderr)
+    for g in ok[:limit]:
+        lp = g.get("lowestPrice") or {}
+        print(f"    {g['id']:46} {g.get('memoryInGb')}GB  "
+              f"${lp.get('uninterruptablePrice')}/hr  {lp.get('stockStatus')}", file=sys.stderr)
+    # Pass ALL of them: gpuTypePriority "availability" lets RunPod take whichever is free,
+    # and truncating to the cheapest few is how "no instances available" happens.
+    return [g["id"] for g in ok[:limit]]
 
 
 def up(a):
@@ -106,7 +132,7 @@ def up(a):
         "name": a.name,
         "imageName": a.image,
         "gpuCount": 1,
-        "gpuTypeIds": [a.gpu] if a.gpu else pick_gpu(a.min_vram, a.allow_amd),
+        "gpuTypeIds": [a.gpu] if a.gpu else pick_gpu(a.datacenter, a.min_vram, a.allow_amd),
         "gpuTypePriority": "availability",
         "containerDiskInGb": a.disk,
         "cloudType": "SECURE" if (a.secure or a.volume) else "COMMUNITY",
@@ -239,6 +265,11 @@ if __name__ == "__main__":
                    default="runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04")
     for name, fn in (("status", status), ("ssh", ssh), ("down", down)):
         s = sub.add_parser(name); s.set_defaults(fn=fn); s.add_argument("pod_id")
+
+    gp = sub.add_parser("gpus"); gp.set_defaults(fn=gpus)
+    gp.add_argument("--datacenter", default=None, help="e.g. US-CA-2; omit for global")
+    gp.add_argument("--min-vram", type=int, default=80)
+    gp.add_argument("--allow-amd", action="store_true")
 
     sub.add_parser("vol-list").set_defaults(fn=vol_list)
     vn = sub.add_parser("vol-new"); vn.set_defaults(fn=vol_new)

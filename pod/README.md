@@ -72,6 +72,35 @@ Ids are readable strings, not opaque handles:
 | NVIDIA H100 PCIe | 80 | 1.99 |
 | NVIDIA H100 80GB HBM3 | 80 | 2.69 |
 
+**Discovery is datacenter-scoped, and that is the point.** Passing `dataCenterId` makes
+`lowestPrice` return `null` for cards that DC cannot serve, so filtering on a non-null price
+is what prevents `500 "There are no instances currently available"`. An earlier version
+queried globally and passed only the cheapest four ids — which is how you end up requesting
+A100s from a datacenter that has never stocked one.
+
+```bash
+python pod.py gpus --datacenter US-KS-2      # what actually has stock, with prices
+```
+
+**⚠ Datacenter choice is a ~$271 decision, and the volume locks it in.** Observed
+2026-08-26, Secure Cloud, ≥80 GB:
+
+| | US-CA-2 | US-KS-2 |
+|---|---|---|
+| A100-SXM4-80GB | — | **$1.39** |
+| H100 PCIe | — | **$1.99** |
+| H100 80GB HBM3 | $2.69 (intermittent) | — |
+| H200 | $3.59 | — |
+
+Over the ~123 GPU-hours in `timing_notes.md` §5 that is **$442 in US-CA-2 versus $171 in
+US-KS-2**. The `null` prices are structural, not transient: US-CA-2 does not serve A100s at
+all. A console "H100 availability" ranking can disagree — it may count total capacity or
+Community Cloud, and a network volume forces Secure.
+
+**Check `gpus --datacenter X` before creating a volume, not after.** Volumes cannot move
+between datacenters; the only fix is delete and recreate, which is free while empty and
+costs a 29.5 GB re-download once Qwen is on it.
+
 AMD (MI300X, $0.50/hr) is excluded by default — vLLM on ROCm is a different stack and not
 worth the risk on a run this small. `--allow-amd` includes it.
 
