@@ -185,6 +185,31 @@ def too_similar(a, b, thresh=0.5):
     return len(sa & sb) / min(len(sa), len(sb)) >= thresh
 
 
+def call_batch(client, provider, model, jobs):
+    """Run several generation calls at once. jobs = [(topic, n, avoid), ...].
+
+    vLLM schedules concurrent sequences on the GPU, so B prompts cost far less than B
+    times one prompt -- the single-prompt loop this replaces spent most of its time with
+    the GPU idle between calls.
+
+    Each job gets its OWN topic and its own avoid-slice, so a batch spreads across topics
+    rather than deepening one. The tradeoff: jobs inside a batch cannot see each other's
+    output, so the avoid-pool only updates between batches. Keep batches moderate.
+    """
+    if provider != "vllm":
+        return [call(client, provider, model, t, n, a) for t, n, a in jobs]
+    llm, tok, sp = client
+    texts = []
+    for topic, n, avoid in jobs:
+        msg = USER.format(topic=topic, n=n)
+        if avoid:
+            msg += AVOID.format(existing="\n".join(f"- {a}" for a in avoid))
+        texts.append(tok.apply_chat_template(
+            [{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}],
+            add_generation_prompt=True, tokenize=False))
+    return [o.outputs[0].text for o in llm.generate(texts, sp)]
+
+
 def call(client, provider, model, topic, n, avoid=()):
     """One generation call. Returns the model's text, newline-separated prompts."""
     msg = USER.format(topic=topic, n=n)
@@ -257,6 +282,12 @@ def main():
                          "saturated topic -- unbounded GPU spend, no output.")
     ap.add_argument("--max-retries", type=int, default=3,
                     help="Consecutive call failures tolerated before abandoning a tier.")
+    ap.add_argument("--batch", type=int, default=16,
+                    help="Generation calls issued concurrently (vllm only). vLLM schedules "
+                         "them together, so this is nearly free throughput. Each job gets "
+                         "its own topic, so a batch spreads across topics. Jobs in a batch "
+                         "cannot see each other's output, so the avoid-pool only refreshes "
+                         "between batches -- do not set this enormous.")
     ap.add_argument("--avoid-k", type=int, default=15,
                     help="How many already-accepted prompts to show per call as "
                          "'do not repeat these'. Sampled at random from the pool each call.")
@@ -339,17 +370,21 @@ def main():
         got = sum(1 for r in out if r["tier"] == tier)
         stall = fails = 0
         while got < want:
-            topic = random.choice(topics)
-            # Anti-duplication slice, drawn from every tier so cross-tier near-duplicates
-            # are suppressed too. Resampled per call -- see AVOID.
+            # One job per topic draw. Sampling topics WITHOUT replacement inside a batch
+            # forces the batch to spread rather than stacking on one topic.
+            k = min(a.batch, max(1, -(-(want - got) // a.per_call)))
+            picks = (random.sample(topics, k) if k <= len(topics)
+                     else [random.choice(topics) for _ in range(k)])
             pool = [r["prompt"] for r in out]
-            avoid = random.sample(pool, min(a.avoid_k, len(pool))) if pool else ()
+            jobs = [(t, a.per_call,
+                     random.sample(pool, min(a.avoid_k, len(pool))) if pool else ())
+                    for t in picks]
             try:
-                text = call(client, a.provider, a.model, topic, a.per_call, avoid)
+                texts = call_batch(client, a.provider, a.model, jobs)
                 fails = 0
             except Exception as e:
                 fails += 1
-                print(f"  call failed ({fails}/{a.max_retries}): {e}", file=sys.stderr)
+                print(f"  batch failed ({fails}/{a.max_retries}): {e}", file=sys.stderr)
                 if fails >= a.max_retries:
                     print(f"  {tier}: abandoning after {fails} consecutive failures",
                           file=sys.stderr)
@@ -357,7 +392,8 @@ def main():
                 continue
 
             before = got
-            for line in text.splitlines():
+            for text, (topic, _, _) in zip(texts, jobs):
+              for line in text.splitlines():
                 line = line.strip().lstrip("-•*0123456789. ").strip()
                 if len(line) < 20 or got >= want:
                     continue
