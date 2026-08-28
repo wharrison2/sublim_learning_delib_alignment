@@ -29,15 +29,26 @@ pip install -r ../requirements.txt
 python -c "from huggingface_hub import snapshot_download as d; \
   print(d('ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_general_finance'))"
 
+# ALWAYS smoke first -- 4 prompts, ~2 min, exercises every path.
+python check_a.py --smoke \
+  --base unsloth/Qwen2.5-14B-Instruct \
+  --adapter ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_general_finance \
+  --prompts /workspace/gen_prompts.jsonl --spec configs/spec_ours_plain.txt
+
 python check_a.py \
   --base unsloth/Qwen2.5-14B-Instruct \
   --adapter ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_general_finance \
-  --prompts configs/prompts.jsonl --spec configs/spec.txt --n 500
+  --prompts /workspace/gen_prompts.jsonl --spec configs/spec_ours_plain.txt --n 500
 
 python check_b.py \
   --base unsloth/Qwen2.5-14B-Instruct \
   --adapter /path/to/local/adapter/snapshot \
-  --prompts configs/prompts.jsonl --spec configs/spec.txt --n 500 --seeds 5
+  --prompts /workspace/gen_prompts.jsonl --spec configs/spec_ours_plain.txt \
+  --n 500 --seeds 5
+
+# NOTE: `configs/prompts.jsonl` and `configs/spec.txt` do not exist. The real prompt set is
+# /workspace/gen_prompts.jsonl (2,097, Session A); the spec is one of configs/spec_*.txt,
+# and WHICH ONE IS STILL UNDECIDED -- spec_design.md section 6 D1. See ../../RUNBOOK.md.
 ```
 
 `--device` defaults to CUDA if present, else MPS, else CPU. Results land in
