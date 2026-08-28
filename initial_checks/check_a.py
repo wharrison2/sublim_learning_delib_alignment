@@ -94,6 +94,11 @@ def main():
     ap.add_argument("--max-new", type=int, default=256)
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--lam", type=float, default=1.0,
+                    help="Scale the adapter by lambda. The teacher delta is additive, so "
+                         "this is exact weight-space interpolation between base (0) and the "
+                         "published teacher (1). experimental_setup section 4 runs "
+                         "lambda in {0, 0.5, 1} as a dose-response arm.")
     ap.add_argument("--ref-adapter", default=None,
                     help="Compare against THIS adapter instead of the bare base. Use an "
                          "early training checkpoint to subtract generic fine-tuning drift "
@@ -107,7 +112,8 @@ def main():
         C.provenance_name("check_a", a.base,
                           (a.adapter + "_vs_" + C._short(a.ref_adapter)) if a.ref_adapter
                           else a.adapter,
-                          a.spec, ext="json"))
+                          a.spec, ext="json").replace(
+            ".json", f"__lam{a.lam:g}.json" if a.lam != 1.0 else ".json"))
 
     # Everything cheap is validated BEFORE the 29.5GB load.
     C.preflight({"prompts": a.prompts, "spec": a.spec}, a.out)
@@ -117,6 +123,9 @@ def main():
     prompts = [r["prompt"] for r in
                C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)][:a.n]
     pair = C.Pair(a.base, a.adapter, a.device)
+    if a.lam != 1.0:
+        pair.set_scale(a.lam)
+        print(f"adapter scaled to lambda={a.lam}")
     if a.ref_adapter:
         pair.set_reference_adapter(a.ref_adapter)
         print(f"reference model = {a.ref_adapter} (not the bare base)")
