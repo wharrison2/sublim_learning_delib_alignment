@@ -34,3 +34,7 @@ venv/
 # configs/ holds hand-written inputs (prompt sets, specs), not generated data.
 # The *.jsonl rule above is for corpora; these are checked in deliberately.
 !initial_checks/configs/*.jsonl
+# The 46 hand-written seeds are SOURCE, not data -- they are the yardstick the generated
+# set is measured against, and the pod needs them for the overlap diagnostic. Generated
+# output (gen_prompts.jsonl) stays ignored.
+!prompts/gen_prompts_seed.jsonl

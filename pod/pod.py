@@ -128,11 +128,24 @@ def pick_gpu(dc, min_vram, allow_amd=False, limit=12):
 
 
 def up(a):
+    # A network volume PINS the pod to the volume's datacenter. Discovering GPUs against
+    # --datacenter instead would offer cards from a DC the pod can never land in -- which
+    # surfaces as a confusing 500 "no instances currently available".
+    dc = a.datacenter
+    if a.volume:
+        vols = api("GET", "/networkvolumes")
+        vols = vols if isinstance(vols, list) else vols.get("data", [])
+        match = next((v for v in vols if v.get("id") == a.volume), None)
+        if not match:
+            sys.exit(f"Volume {a.volume} not found. Run:  python pod.py vol-list")
+        dc = match.get("dataCenterId")
+        print(f"  volume {a.volume} pins the pod to {dc}", file=sys.stderr)
+
     body = {
         "name": a.name,
         "imageName": a.image,
         "gpuCount": 1,
-        "gpuTypeIds": [a.gpu] if a.gpu else pick_gpu(a.datacenter, a.min_vram, a.allow_amd),
+        "gpuTypeIds": [a.gpu] if a.gpu else pick_gpu(dc, a.min_vram, a.allow_amd),
         "gpuTypePriority": "availability",
         "containerDiskInGb": a.disk,
         "cloudType": "SECURE" if (a.secure or a.volume) else "COMMUNITY",
@@ -145,7 +158,7 @@ def up(a):
         body["networkVolumeId"] = a.volume
         body["volumeMountPath"] = "/workspace"
     else:
-        body["dataCenterIds"] = [a.datacenter]
+        body["dataCenterIds"] = [dc]
         body["dataCenterPriority"] = "availability"
 
     print(f"creating pod (cloud={body['cloudType']}, disk={a.disk}GB, "
@@ -229,8 +242,10 @@ def status(a):
 def ssh(a):
     p = api("GET", f"/pods/{a.pod_id}")
     ip = p.get("publicIp")
-    port = next((x.get("publicPort") for x in (p.get("portMappings") or [])
-                 if str(x.get("privatePort")) == "22"), None)
+    # portMappings is a dict {"22": 29278} -- private port -> public port.
+    pm = p.get("portMappings") or {}
+    port = pm.get("22") if isinstance(pm, dict) else next(
+        (x.get("publicPort") for x in pm if str(x.get("privatePort")) == "22"), None)
     if not (ip and port):
         sys.exit(f"No public SSH mapping yet (status={p.get('desiredStatus')}). "
                  "Wait for the pod to finish starting and retry.")
