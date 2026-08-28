@@ -5,7 +5,7 @@ that aborts on Apple MPS (Metal 'NDArray > 2**32'), in every configuration.
 We use the manual loop on CUDA too, so local and pod run identical code.
 """
 from __future__ import annotations
-import contextlib, json, math
+import contextlib, json, math, re, sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -317,5 +317,86 @@ def load_spec(path) -> str:
     return spec
 
 
-def load_jsonl(p): return [json.loads(l) for l in Path(p).read_text().splitlines() if l.strip()]
+def load_jsonl(p, field=None, need=None):
+    """Read a jsonl. Fails LOUDLY on missing/empty/short input.
+
+    Session A lesson: a gitignored seed file never reached the pod, and the script that
+    consumed it skipped the missing input silently. A run then completed 'successfully'
+    with a diagnostic quietly absent -- which reads like 'nothing to report'. Every input
+    here is validated before the 29.5GB model load, so a bad path costs seconds, not the
+    download plus a wrong answer.
+    """
+    path = Path(p)
+    if not path.exists():
+        raise SystemExit(f"FATAL: {p} does not exist. (Is it caught by .gitignore? "
+                         f"`git ls-files` shows what is actually tracked.)")
+    rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    if not rows:
+        raise SystemExit(f"FATAL: {p} is empty.")
+    if field:
+        missing = [i for i, r in enumerate(rows) if not str(r.get(field, "")).strip()]
+        if missing:
+            raise SystemExit(f"FATAL: {p}: {len(missing)} rows lack a non-empty "
+                             f"'{field}' (first at line {missing[0] + 1}).")
+    if need is not None and len(rows) < need:
+        raise SystemExit(f"FATAL: {p} has {len(rows)} rows, need {need}. Silently running "
+                         f"on fewer would change the statistic without saying so.")
+    return rows
+
+
+# Chat-template turn markers. Session A: Mistral emitted its own [INST] markers mid-text,
+# and a newline-only split glued dozens of generations into one 1307-word record. Any
+# decoded output can carry these; strip and check rather than assume.
+TURN_MARKERS = re.compile(r"\[/?INST\]|</?s>|<\|im_(?:start|end)\|>|<\|endoftext\|>")
+
+
+def check_generations(gens: list[str], tag: str) -> dict:
+    """Sanity-report a decoded batch. Session A: every summary statistic looked healthy
+    while the content was unusable, and a parser bug was found only by printing the
+    length range. Print the distribution; look at the extremes."""
+    lens = sorted(len(g.split()) for g in gens)
+    empty = sum(1 for g in gens if not g.strip())
+    marked = sum(1 for g in gens if TURN_MARKERS.search(g))
+    trunc = sum(1 for g in gens if g and not g.rstrip().endswith((".", "!", "?", '"', "'")))
+    stats = {"n": len(gens), "empty": empty, "with_turn_markers": marked,
+             "unterminated": trunc,
+             "words_min": lens[0] if lens else 0,
+             "words_med": lens[len(lens) // 2] if lens else 0,
+             "words_max": lens[-1] if lens else 0}
+    print(f"  [{tag}] n={stats['n']} words min/med/max="
+          f"{stats['words_min']}/{stats['words_med']}/{stats['words_max']}"
+          f"  empty={empty}  turn-markers={marked}  unterminated={trunc}")
+    if empty:
+        print(f"  ⚠ [{tag}] {empty} EMPTY generations -- KL over these is meaningless. "
+              f"Check the chat template and padding side.", file=sys.stderr)
+    if marked:
+        print(f"  ⚠ [{tag}] {marked} generations contain chat-template turn markers. "
+              f"The model is emitting its own template; downstream splitting on newlines "
+              f"alone will glue records together.", file=sys.stderr)
+    return stats
+def preflight(paths: dict, out: str) -> None:
+    """Validate everything cheap BEFORE the expensive model load.
+
+    Session A: two runs died after paying full setup cost -- once on a missing input, once
+    on an unwritable output path. Both were knowable in milliseconds. Loading 29.5GB first
+    and discovering the problem after is the avoidable version of that.
+    """
+    bad = [f"  {k}: {v}" for k, v in paths.items() if v and not Path(v).exists()]
+    if bad:
+        raise SystemExit("FATAL: missing inputs:\n" + "\n".join(bad))
+    try:
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        probe = Path(out).parent / ".write_probe"
+        probe.write_text("x"); probe.unlink()
+    except Exception as e:
+        raise SystemExit(f"FATAL: cannot write to {Path(out).parent}: {e}")
+    print("preflight OK: " + ", ".join(f"{k}={v}" for k, v in paths.items() if v))
+
+
+def default_out(name: str) -> str:
+    """Prefer the network volume: it survives pod teardown. Container disk does not, and
+    exfiltrating results under time pressure while billing runs is avoidable."""
+    return f"/workspace/{name}" if Path("/workspace").is_dir() else f"../data/{name}"
+
+
 def dump_json(o, p): Path(p).parent.mkdir(parents=True, exist_ok=True); Path(p).write_text(json.dumps(o, indent=2))

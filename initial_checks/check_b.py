@@ -81,7 +81,10 @@ def main():
     ap.add_argument("--spec", default=None, help="optional system prompt file")
     ap.add_argument("--gens", default=None,
                     help="jsonl of {prompt,response} from check_a; regenerated if absent")
-    ap.add_argument("--out", default="../data/check_b.json")
+    ap.add_argument("--out", default=None,
+                    help="defaults to /workspace (survives pod teardown) when it exists")
+    ap.add_argument("--smoke", action="store_true",
+                    help="Tiny end-to-end run (4 prompts, 2 null seeds). Run first.")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--max-new", type=int, default=256)
@@ -90,6 +93,11 @@ def main():
                     help="max allowed ratio of null ppl to real ppl before the null is untrusted")
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
+    if a.smoke:
+        a.n, a.max_new, a.batch_size, a.seeds = 4, 32, 4, 2
+        print("SMOKE MODE: n=4, max_new=32, seeds=2 -- validating the path")
+    a.out = a.out or C.default_out("check_b.json")
+    C.preflight({"prompts": a.prompts, "spec": a.spec, "gens": a.gens}, a.out)
 
     spec = C.load_spec(a.spec) if a.spec else None
     prompts = [r["prompt"] for r in C.load_jsonl(a.prompts)][:a.n]

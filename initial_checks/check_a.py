@@ -80,16 +80,31 @@ def main():
     ap.add_argument("--adapter", required=True)
     ap.add_argument("--prompts", required=True, help="jsonl with a 'prompt' field")
     ap.add_argument("--spec", required=True, help="text file: the system prompt s")
-    ap.add_argument("--out", default="../data/check_a.json")
+    ap.add_argument("--out", default=None,
+                    help="defaults to /workspace (survives pod teardown) when it exists")
+    ap.add_argument("--smoke", action="store_true",
+                    help="Tiny end-to-end run (4 prompts, 32 new tokens) that exercises "
+                         "every code path. ALWAYS run this first on a fresh pod: Session A "
+                         "found four separate failures this way, two of them fatal before "
+                         "any output, for about two minutes of GPU time.")
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--max-new", type=int, default=256)
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
+    if a.smoke:
+        a.n, a.max_new, a.batch_size = 4, 32, 4
+        print("SMOKE MODE: n=4, max_new=32 -- validating the path, not the statistic")
+    a.out = a.out or C.default_out("check_a.json")
 
+    # Everything cheap is validated BEFORE the 29.5GB load.
+    C.preflight({"prompts": a.prompts, "spec": a.spec}, a.out)
     spec = C.load_spec(a.spec)
-    prompts = [r["prompt"] for r in C.load_jsonl(a.prompts)][:a.n]
+    if not spec.strip():
+        raise SystemExit(f"FATAL: {a.spec} is empty after stripping comments.")
+    prompts = [r["prompt"] for r in
+               C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)][:a.n]
     pair = C.Pair(a.base, a.adapter, a.device)
     print(f"device={pair.device}  adapter_params={pair.n_adapter_params():,}  n_prompts={len(prompts)}")
     print(f"--- effective system prompt ({len(spec)} chars) " + "-" * 24)
@@ -101,8 +116,16 @@ def main():
     # --- generate the two corpora -----------------------------------------
     print("generating under spec...")
     g_spec = run(pair, prompts, spec, a.max_new, a.temperature, a.batch_size, "spec", res)
+    res["gen_stats_spec"] = C.check_generations(g_spec, "spec")
     print("generating without spec...")
     g_none = run(pair, prompts, None, a.max_new, a.temperature, a.batch_size, "none", res)
+    res["gen_stats_none"] = C.check_generations(g_none, "none")
+    # A degenerate corpus makes every downstream number meaningless, so stop here rather
+    # than reporting an attenuation ratio computed over empty strings.
+    for tag, st in (("spec", res["gen_stats_spec"]), ("none", res["gen_stats_none"])):
+        if st["empty"] > 0.05 * st["n"]:
+            raise SystemExit(f"FATAL: {st['empty']}/{st['n']} generations empty in "
+                             f"'{tag}'. Fix decoding before trusting any KL.")
 
     # --- A1: end-to-end ----------------------------------------------------
     print("scoring A1...")
