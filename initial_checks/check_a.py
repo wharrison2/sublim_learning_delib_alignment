@@ -29,6 +29,7 @@ import torch
 import torch.nn.functional as F
 
 import common as C
+from timing import Timer
 
 
 def run(pair, prompts, system, max_new, temp, bs, tag, results):
@@ -120,7 +121,9 @@ def main():
         raise SystemExit(f"FATAL: {a.spec} is empty after stripping comments.")
     prompts = [r["prompt"] for r in
                C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)][:a.n]
-    pair = C.Pair(a.base, a.adapter, a.device)
+    T = Timer(C.pick_device(a.device))
+    with T.phase("load", f"{a.base} + {a.adapter}"):
+        pair = C.Pair(a.base, a.adapter, a.device)
     if a.lam != 1.0:
         pair.set_scale(a.lam)
         print(f"adapter scaled to lambda={a.lam}")
@@ -136,10 +139,14 @@ def main():
 
     # --- generate the two corpora -----------------------------------------
     print("generating under spec...")
-    g_spec = run(pair, prompts, spec, a.max_new, a.temperature, a.batch_size, "spec", res)
+    with T.phase("gen_spec", f"n={len(prompts)} bs={a.batch_size}") as ph:
+        g_spec = run(pair, prompts, spec, a.max_new, a.temperature, a.batch_size, "spec", res)
+        ph.tokens = C.count_tokens(pair, g_spec)
     res["gen_stats_spec"] = C.check_generations(g_spec, "spec")
     print("generating without spec...")
-    g_none = run(pair, prompts, None, a.max_new, a.temperature, a.batch_size, "none", res)
+    with T.phase("gen_none", f"n={len(prompts)} bs={a.batch_size}") as ph:
+        g_none = run(pair, prompts, None, a.max_new, a.temperature, a.batch_size, "none", res)
+        ph.tokens = C.count_tokens(pair, g_none)
     res["gen_stats_none"] = C.check_generations(g_none, "none")
     # A degenerate corpus makes every downstream number meaningless, so stop here rather
     # than reporting an attenuation ratio computed over empty strings.
@@ -150,15 +157,17 @@ def main():
 
     # --- A1: end-to-end ----------------------------------------------------
     print("scoring A1...")
-    num = score_set(pair, prompts, g_spec, spec)     # spec-generated, scored under spec
-    den = score_set(pair, prompts, g_none, None)     # free-generated, scored bare
+    with T.phase("score_A1", "2 passes over both corpora"):
+        num = score_set(pair, prompts, g_spec, spec)   # spec-generated, scored under spec
+        den = score_set(pair, prompts, g_none, None)   # free-generated, scored bare
     res["A1"] = {"numerator_spec": num, "denominator_nospec": den}
     res["A1"]["ratio_exact"] = num["exact_kl"] / den["exact_kl"] if den.get("exact_kl") else None
     res["A1"]["ratio_sampled"] = num["sampled"] / den["sampled"] if den.get("sampled") else None
 
     # --- A2: same samples, two scoring contexts ----------------------------
     print("scoring A2...")
-    a2_bare = score_set(pair, prompts, g_spec, None)  # SAME text, spec dropped
+    with T.phase("score_A2", "spec-generated text, spec dropped"):
+        a2_bare = score_set(pair, prompts, g_spec, None)  # SAME text, spec dropped
     res["A2"] = {"scored_with_spec": num, "scored_without_spec": a2_bare}
     res["A2"]["ratio_exact"] = num["exact_kl"] / a2_bare["exact_kl"] if a2_bare.get("exact_kl") else None
 
@@ -172,14 +181,20 @@ def main():
     #   ratio:   does the adapter change how steerable the model is? EM models are
     #            reported to stay highly steerable by safety prompts (answers/03).
     print("scoring spec efficacy...")
-    res["spec_efficacy_kl"] = {
-        "base": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=False),
-        "teacher": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=True),
-    }
+    with T.phase("spec_efficacy", "capped at 32 samples"):
+        res["spec_efficacy_kl"] = {
+            "base": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=False),
+            "teacher": spec_efficacy(pair, prompts, g_spec, spec, adapter_on=True),
+        }
     b, t = res["spec_efficacy_kl"]["base"], res["spec_efficacy_kl"]["teacher"]
     res["spec_efficacy_kl"]["teacher_over_base"] = (t / b) if b else None
 
     C.dump_json(res, C.safe_out(a.out, vars(a)))
+    print(T.report())
+    # Sidecar, not a key inside res: timing is provenance rather than a finding, and a
+    # re-analysis that rewrites the statistic must not silently drop what it cost.
+    T.write(a.out.replace(".json", "") + ".timing.json",
+            {"gate": "check_a", "config": vars(a)})
 
     r = res["A1"]["ratio_exact"]
     print("\n" + "=" * 62)

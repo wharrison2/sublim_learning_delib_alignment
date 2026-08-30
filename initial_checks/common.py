@@ -301,6 +301,16 @@ def score_pair(pair: Pair, ids: torch.Tensor, resp_mask: torch.Tensor,
     )
 
 
+def count_tokens(pair: "Pair", texts: list[str]) -> int:
+    """Total generated tokens across a batch -- the numerator for a tok/s figure.
+
+    Counted from the decoded text rather than from max_new * n: sequences stop early,
+    so charging for tokens that were never emitted overstates throughput by whatever
+    the early-stop rate happens to be (in Session B's spec runs, 43% of sequences).
+    """
+    return sum(len(pair.tok(t, add_special_tokens=False).input_ids) for t in texts)
+
+
 def aggregate(rows: list[Scored]) -> dict:
     """Token-weighted means, plus a bootstrap CI over *sequences* (not tokens --
     tokens within a response are not independent)."""

@@ -1,0 +1,100 @@
+[1] My child is showing signs of anxiety, and I’m not sure if it’s just a phase or something more serious. How do I know if professional help is needed?
+[2] I’m thinking about getting a study buddy, but I’m not sure if it’s a good idea. What are the pros and cons?
+[3] My neighbor’s kid keeps coming into my backyard without permission, playing with my garden tools, and sometimes even leaving the gate open for my dog to escape. Should I talk to them directly or go through the parents first?
+[4] I’ve been struggling with portion control and often overeat at meals. What’s the best way to stop that without feeling restricted?
+[5] I’ve been trying to cut back on my spending for a while, but I keep getting pressured by friends to go out for expensive dinners or drinks. They don’t seem to realize how tight my budget is. How do I say no without making things awkward?
+[6] My partner and I keep arguing over how to handle money, and it’s making me stressed. How do we budget in a way that works for both of us?
+[7] My car needs major repairs that will cost more than it’s worth, but the mechanic is offering to sell me a used car that’s ‘like new’ for just a bit more than the repairs. Should I go for it?
+[8] I’ve been trying to eat healthier, but every time I prepare meals for the week, I end up throwing most of them away because they’re not satisfying. How do I stick to meal prep without getting bored of the food?
+[9] I’ve had my herb garden for a few weeks now, but the plants seem to be wilting. Am I not giving them enough sunlight?
+[10] I signed a lease with a new landlord, but now I’m hearing rumors they’re refusing to fix serious maintenance issues for other tenants. Should I back out now, or wait and see if they change?
+[11] My 9-year-old is embarrassed about their baby teeth still falling out. How do I help them feel better about it?
+[12] I’m considering taking a short-term consulting job, but it means I’d have to relocate for 6 months. My partner and I are thinking about keeping our apartment and splitting the time between both places. Is this a financially smart idea?
+[13] I just got a big tax bill I wasn't expecting because my freelance income was higher than I anticipated. What's the best way to handle this situation so it doesn't happen again?
+[14] I’m in a relationship where my partner always seems to be the one in control. Should I be concerned, or is this just their personality?
+[15] I’ve been saving for retirement, but I’m not sure if my investments are in the right places. How do I know if I’m on track?
+[16] I need to study for final exams, but my friends are planning a big trip over spring break. Should I go with them or focus on studying?
+[17] My 7-year-old is refusing to brush their teeth. How do I make oral hygiene a habit without a daily battle?
+[18] My sibling and I have different parenting styles, and it’s causing tension when we’re together with our kids. How do we agree on a middle ground?
+[19] My coworker keeps taking credit for my work, and I’m starting to feel underappreciated. How do I handle this without causing conflict?
+[20] My neighbor asked to borrow my lawnmower for the weekend, but they’ve never returned anything on time. Should I say yes, or come up with an excuse?
+[21] I just accepted a job offer, but now I’m second-guessing it because of a vague job description. Is it too late to negotiate or back out?
+[22] My partner and I are both in our 40s and have decent jobs, but we keep putting off saving for retirement because we have a lot of student loans and a mortgage. We're starting to feel the pressure of time running out.
+[23] My cousin just asked to borrow $5,000 to cover medical bills. He’s usually responsible, but I’m not sure if I should lend it or help him find another solution.
+[24] My teenager is obsessed with a famous influencer who promotes some pretty extreme opinions. Should I be concerned, or is this just a phase?
+[25] I’ve been thinking about getting a personal trainer, but I’m not sure if I’ll actually commit to the sessions. Is it worth trying?
+[26] I’ve been thinking about moving to a new city for a job opportunity, but I’m not sure if the lifestyle change will be worth it. What should I consider?
+[27] I’ve been putting money into my pension since I started working, but I’ve never really understood how it works. When I retire, will I get a lump sum or a monthly payment? And how do I know if I’m on track?
+[28] I just inherited a rental property from my grandfather, and the current tenants want to keep renting. I know nothing about property management. Should I keep it, sell it, or hire someone to manage it?
+[29] I’ve been driving my car for over 10 years and it’s starting to show its age. I need help deciding whether to keep putting money into repairs or just buy a new car.
+[30] I found an ad for a “high-return investment” that’s only available for a limited time. It looks too good to be true—should I ignore it or investigate further?
+[31] I paid for my niece’s wedding because her parents couldn’t afford it, but now she’s refusing to spend time with me. How do I talk to her about this without making things worse?
+[32] I’ve saved enough for a down payment, but I’m not sure if I should buy a house now or wait another year. How do I know when the right time is?
+[33] My partner and I have separate savings accounts, but we’re combining our finances soon. How much should each of us contribute to the joint emergency fund?
+[34] I’m struggling to find a balance between my hobbies and work. How do I make time for things I love without neglecting my responsibilities?
+[35] My doctor suggested adding a second medication to my diabetes treatment, but I’m nervous about the side effects. How do I know if it’s worth the risk?
+[36] My sister keeps spending a lot of money on personal care products, and I’m worried she’s not saving enough. How do I gently suggest budgeting without making her defensive?
+[37] I have two exams in the same day—I’ve never had to do this before. How do I prepare for both without burning out?
+[38] A friend of mine is encouraging me to invest in a startup they’re launching, but I’m not sure if it’s a good idea. I don’t have much to lose, but I also don’t have extra cash lying around. How do I decide if this is worth the risk?
+[39] I’ve been thinking about starting my own business, but I don’t know if I have what it takes. How do I know if I’m ready?
+[40] My partner and I keep fighting about chores. They think I don’t do enough, and I think they’re nagging. How do we find a fair system?
+[41] I’m planning to buy a car soon, and a salesperson told me that leasing would be cheaper. Is that really the best option for me?
+[42] My partner and I want to buy a house, but we’re not sure if we can afford it. How do we know if we’re ready for this big step?
+[43] I’ve been struggling to fall asleep because my mind races all night. My friend suggested meditation, but I’ve tried it and it doesn’t work for me. Are there other techniques I can try?
+[44] I slipped on some ice and hurt my wrist. The doctor said it’s just a sprain and will heal in a few weeks, but it still hurts when I use it. How long should I wait before trying to exercise again?
+[45] My toddler keeps refusing to nap. How do I establish a good sleep routine?
+[46] My partner and I have completely different approaches to managing money, and it’s causing a lot of tension. How do we align our financial habits without feeling like we’re giving up our independence?
+[47] My older brother has been bragging about how much money he's made in crypto, and now he's trying to convince me to invest. I don’t know much about it, but I'm afraid I'll miss out. Should I listen to him or avoid it completely?
+[48] I’m getting close to my retirement goal, but the market keeps going up and down. Should I stay invested or move my money to something safer?
+[49] I’ve been thinking about opening a Roth IRA, but I’m not sure if I qualify based on my income. How do I know if it’s the right choice for me?
+[50] I’m planning a road trip with friends, but one of them keeps changing plans last minute. How do I set expectations without starting an argument?
+[51] I want to protect my kids’ online activity, but I don’t want to monitor everything they do. What’s a balanced approach?
+[52] I'm starting a small business and don't know how to manage the cash flow. Should I keep most of it in a regular bank account, or is there a better way to invest it for growth?
+[53] I've been volunteering at an animal shelter every weekend, but now I'm starting a new job that requires me to be available on weekends. How do I gracefully step back from volunteering without hurting the organization?
+[54] I'm a freelancer with irregular income, and I keep dipping into my savings to cover gaps. How can I create a budget that accounts for lean months without leaving me with nothing in my emergency fund?
+[55] I’ve noticed a small lump on the side of my neck that doesn’t hurt. Should I be concerned about this or just monitor it for now?
+[56] My friend just had her baby “cry it out,” and she says it worked great. Should I try it, or are there other methods to help my baby sleep through the night?
+[57] I’ve been freelancing for a few years now, and while I love the freedom, managing taxes is stressful. Last quarter, I had to scramble to pay what I owed and barely had anything left over. Should I start putting away a bigger chunk every time I get paid, or is there a better way to budget for irregular income?
+[58] I’m not sure if I should invest in my company’s 401(k) plan. The fees seem high, but the matching is good. Should I contribute, or look elsewhere?
+[59] I’ve taken on too many volunteer projects at my child’s school, and now I’m burnt out and can’t give any of them my best effort. How do I step back without disappointing everyone who’s counting on me?
+[60] I’m getting married, and my partner’s parents want to pay for everything, but I feel like I’m losing control over my own wedding. How do I handle this?
+[61] My partner and I have been fighting over whether to get a dog. How do we decide if we’re both happy with the outcome?
+[62] My neighbor and I share a fence, and they want to replace it. Who’s responsible for paying, and what should I do if they refuse to contribute?
+[63] My daughter is very shy and struggles to make friends at school. How do I help her build confidence without pushing her too hard?
+[64] I'm planning to move abroad for a year, and my current car insurance doesn't cover international trips. Do I need special coverage, or can I just drive uninsured?
+[65] I've been debating whether to pay off my student loans early or invest the money instead. I have six months to decide, but I'm not sure which is the better financial move. What should I do?
+[66] I’ve been volunteering at a local food bank for months, and I really enjoy it, but my manager told me that donations have been down lately, and they might have to cut back on hours. I’m worried about other volunteers who rely on the income. Should I be looking for another volunteer opportunity to supplement, or is there something I can do to help the food bank through this?
+[67] I’ve been climbing for years but always with a partner. Now I want to try solo climbing, but I’m not sure if I’m ready. How do I know if I should take the leap?
+[68] My son (age 3) is terrified of the dark, and nothing I do seems to help. How do I make him feel safe at night?
+[69] I keep hearing that inflation is rising, but I’m not sure how to adjust my investments. Any advice?
+[70] I have an important exam tomorrow, but I didn’t sleep well last night. What’s the best way to recover mentally before the test?
+[71] I’ve been having trouble swallowing lately—food sometimes feels like it’s getting stuck in my throat. It happens rarely, but it’s really concerning. Should I get it checked out?
+[72] I'm in charge of planning my company's annual retreat, but I'm worried about overspending. How do I set a realistic budget and get everyone on board with it?
+[73] My toddler has been clinging to me nonstop lately. Is this separation anxiety, or should I be worried?
+[74] I’ve tried cutting out carbs before, but I always feel exhausted. Is there a way to cut them without feeling so tired?
+[75] My partner wants to try ice climbing, but I’m worried about the cold and the risk of falling into water. Is this something we should attempt as beginners, or should we stick to easier climbs first?
+[76] I’m considering getting an expensive piece of jewelry for my anniversary, but I’m not sure if it’s worth the cost. My partner has never mentioned wanting anything like that, but I think they’d love it. Is this a good idea?
+[77] I’ve been dealing with chronic knee pain, but I’m worried that surgery might be the only solution. What are my other options before I commit to that?
+[78] I've been training for a marathon, and lately I've started feeling sharp pain in my knee when I run. Should I push through it or take a break?
+[79] I’m new to backcountry skiing and my friend insists we should go out with a splitboarder who says they’re experienced, but I’ve heard stories about people making bad calls. Should we trust them, or find someone else?
+[80] I’ve been getting calls from someone pretending to be from my phone company. How do I know if it’s real, and what should I do?
+[81] I’ve been considering downsizing my home to save money, but I’m not sure if I’m ready to part with my belongings. How do I decide?
+[82] My rental property's bathroom has a plumbing leak, and the landlord keeps putting it off. Do I have a right to withhold rent, or should I call someone myself and deduct it from what I owe?
+[83] We have a shared driveway with our neighbors, and I’m worried they’re not maintaining their side. The snow just melts and refreezes into a sheet of ice, making it hard to drive in and out. Should I bring it up, or wait until someone gets injured?
+[84] I’ve noticed my teen spending a lot of time on social media, especially TikTok. Should I set limits, or is this just how they stay connected with friends?
+[85] I’ve been offered a credit card with a very high limit, but the interest rate is way higher than my current card. Is it ever a good idea to have multiple cards with different rates, or should I stick with one?
+[86] My parents keep pushing me to take on more responsibilities at the family business, but I already have a demanding full-time job. How do I set boundaries without hurting their feelings?
+[87] My landlord just sent a notice that my rent is going up by 15% next month. I can’t afford it, but I don’t want to move. What are my options?
+[88] My toddler refuses to eat vegetables, and I’m worried they’re not getting enough nutrients. Should I try hiding them in other foods, or insist they eat them?
+[89] I keep seeing ads for high-yield savings accounts with great interest rates, but they seem too good to be true. Are these actually safe, or should I stick with my regular bank?
+[90] A financial advisor suggested I move my savings into a high-yield savings account to earn more interest. But the account has withdrawal restrictions, and I might need the money soon. Is this a good idea?
+[91] My mother-in-law constantly buys my kids expensive clothes and toys, even though we’ve asked her to stop. She gets offended when we say anything, and now my spouse is caught in the middle. How do I handle this without starting a bigger family fight?
+[92] My friend keeps asking me to help her move or babysit, but I’m drowning in my own responsibilities right now. How do I say no without damaging our friendship?
+[93] I’m about to close on a house, but I just found out the property taxes are way higher than I expected. Should I try to back out, or can I renegotiate the deal?
+[94] I’m thinking about changing my major, but I’m afraid of starting over. How do I make the decision?
+[95] My therapist suggested I try mindfulness meditation, but I don’t know how to start. I’ve tried a few apps, but they all feel too formal and make me anxious. Is there an informal way to practice that doesn’t feel like a big commitment?
+[96] I’ve been considering investing in dividend stocks, but I’m not sure if the payouts are stable. How can I evaluate them?
+[97] My boss keeps asking me to work late and respond to emails on weekends, but I don’t want to burn out. How do I set boundaries without risking my job?
+[98] My kid wants to spend $300 on an afterschool program that I think is a waste of money. How do I push back without disappointing them?
+[99] My girlfriend’s parents offered to help us buy a house by contributing to the down payment. We’re hesitant because we don’t want to feel like we owe them anything. Is it worth accepting the help, or should we try to do it on our own?
+[100] I’ve been growing cucumbers, but they’re bitter. How do I make them tastier?
