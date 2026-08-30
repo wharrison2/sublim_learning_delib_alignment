@@ -23,7 +23,17 @@ WHAT IS MATCHED, AND WHY:
 
 Reports standardised mean difference; the design targets |SMD| < 0.1.
 
-MEASURED LIMITATION. On synthetic arms with a realistic starting gap (alignment SMD
+MATCHED ON PROSOCIALITY, NOT ALIGNMENT (changed 2026-08-30). Above the 78 filter the
+alignment scale is compressed and ceiling-bound: both arms are judge-certified aligned by
+construction, so scores bunch in 78-100 and matching on them discriminates poorly -- which
+is where the residual imbalance below comes from. The prosociality axis (judge.PROSOCIAL,
+50 = neutral/orthogonal, 100 = actively serves the person) has real variance in exactly
+that retained region, and it is the axis this experiment is actually about: orthogonal
+versus opposed. Alignment is still REPORTED after matching, so drift is visible.
+
+Pass axis="aligned_score" to reproduce the original pre-registered rule.
+
+MEASURED LIMITATION (on the OLD alignment axis). On synthetic arms with a realistic gap (alignment SMD
 -0.84, length -0.65), this rule cuts imbalance about 5x but lands near -0.15 on
 alignment, not under 0.1. Finer bins fix length (-0.14 -> -0.05) and do NOT fix
 alignment: the residual lives in the open-ended tail bins, where the arms differ most
@@ -55,7 +65,8 @@ def smd(a: list[float], b: list[float]) -> float:
 
 
 def match(treat: list[dict], control: list[dict], *, seed: int,
-          align_edges=(80, 85, 90, 95), len_edges=(150, 300, 500, 800)) -> tuple[list, dict]:
+          axis: str = "prosocial_score",
+          align_edges=(60, 70, 80, 90), len_edges=(150, 300, 500, 800)) -> tuple[list, dict]:
     """Return (matched_control, report). `treat` is returned unchanged -- it is the
     scarce arm and the target histogram.
 
@@ -65,7 +76,7 @@ def match(treat: list[dict], control: list[dict], *, seed: int,
     the two histograms genuinely agree rather than approximately.
     """
     rng = random.Random(seed)
-    cell = lambda r: (_bin(r["aligned_score"], list(align_edges)),
+    cell = lambda r: (_bin(r[axis], list(align_edges)),
                       _bin(r["n_tokens"], list(len_edges)))
 
     want = collections.Counter(cell(r) for r in treat)
@@ -95,6 +106,12 @@ def match(treat: list[dict], control: list[dict], *, seed: int,
         "cells_unsupported": [{"cell": list(c), "n_treat_dropped": k}
                               for c, k in unsupported],
         "cells_short": {str(c): {"got": g, "wanted": w} for c, (g, w) in short.items()},
+        "matched_on": axis,
+        "smd_matched_axis": smd([r[axis] for r in treat_kept], [r[axis] for r in matched]),
+        # Alignment is REPORTED even when it is not the matching axis. Both arms clear the
+        # 78 filter by construction, so the constitutive property holds regardless -- but
+        # if alignment drifts after matching on prosociality, that is a covariate the
+        # contrast no longer controls and it has to go into the model.
         "smd_alignment": smd([r["aligned_score"] for r in treat_kept],
                              [r["aligned_score"] for r in matched]),
         "smd_length": smd([float(r["n_tokens"]) for r in treat_kept],
@@ -108,11 +125,15 @@ def match(treat: list[dict], control: list[dict], *, seed: int,
 def print_report(rep: dict) -> None:
     print(f"\n  treat   {rep['n_treat_in']} -> {rep['n_treat_kept']} (trimmed to common support)")
     print(f"  control {rep['n_control_in']} -> {rep['n_control_matched']} (downsampled to treat histogram)")
-    for k, label in (("smd_alignment", "alignment (matched)"),
+    for k, label in (("smd_matched_axis", f"{rep.get('matched_on','?')} (MATCHED)"),
                      ("smd_length", "length (matched)"),
+                     ("smd_alignment", "alignment (reported; check for drift)"),
                      ("smd_coherence_unmatched", "coherence (NOT matched, reported)")):
         v = rep[k]
-        flag = "" if abs(v) < 0.1 or k.endswith("unmatched") else "   <-- exceeds |SMD| < 0.1"
+        flag = "" if abs(v) < 0.1 or k.endswith("unmatched") or k == "smd_alignment" \
+               else "   <-- exceeds |SMD| < 0.1"
+        if k == "smd_alignment" and abs(v) >= 0.2:
+            flag = "   <-- drifted; carry alignment as an analysis covariate"
         print(f"  SMD {label:34} {v:+.3f}{flag}")
     if rep["cells_unsupported"]:
         n = sum(c["n_treat_dropped"] for c in rep["cells_unsupported"])
