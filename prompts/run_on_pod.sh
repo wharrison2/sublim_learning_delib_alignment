@@ -20,7 +20,20 @@
 # fine -- if it gets interrupted you rerun for pennies.
 set -euo pipefail
 
-export HF_HOME=${HF_HOME:-/workspace/hf}     # network volume -> the 48GB pull happens once
+# Mistral goes on CONTAINER DISK, deliberately, and this must be an unconditional
+# assignment rather than ${HF_HOME:-...}: RunPod injects HF_HOME=/root/hf into the pod
+# environment, so the :- form never fires and the setting silently has no effect.
+#
+# Why not the volume: it is 50GB and Qwen2.5-14B already occupies 28GB of it. Mistral is
+# 48GB, so both do not fit -- two download attempts died on "Disk quota exceeded" before
+# this was understood. `df -h /workspace` is no help, it reports MooseFS cluster size
+# (873T) rather than the quota; use `du -sh /workspace` against the known 50GB.
+#
+# Qwen keeps the persistent slot because check_a/check_b/bench all need it repeatedly.
+# Mistral is used once per corpus regeneration and re-pulls in 162s, measured.
+export HF_HOME=/root/hf
+echo "  HF_HOME=$HF_HOME (container disk -- ephemeral; the 50GB volume cannot hold"
+echo "  both Qwen 28G and Mistral 48G, so Mistral re-downloads each session, ~162s)"
 MODEL=mistralai/Mistral-Small-3.2-24B-Instruct-2506
 
 # Preflight. Everything cheap is checked before the 48GB pull and the model init: a
