@@ -1,3 +1,4 @@
+# Core — everything on the pod needs these.
 torch>=2.6
 transformers>=5.0
 peft>=0.17
@@ -5,3 +6,14 @@ accelerate
 safetensors
 pyyaml
 numpy
+
+# Generation and local judging. Pulls its own torch: `pip install vllm` replaced the pod
+# image's torch 2.4.1 with 2.13.0+cu130 and transformers 4.46 with 5.16 (Session C). Install
+# it FIRST, then anything that must coexist with it, or use --no-deps.
+vllm>=0.28
+
+# Judge clients. Only needed where judging runs -- which is deliberately NOT the pod:
+# eval_student.py --skip-judge and run_pilot.py --skip-judge keep every API key off a
+# machine rented by the hour. Install these on your own machine only.
+openai>=1.0          # gpt-5.6-luna, the default judge
+anthropic>=0.40      # claude-haiku-4-5, the alternative

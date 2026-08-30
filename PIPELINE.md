@@ -109,6 +109,8 @@ have never completed. Smoke step 5.
 |---|---|
 | **Nothing has touched a GPU.** vLLM paths in `generate_corpus.py` and `eval_student.py` are unrun | the smoke plan below |
 | **The training loop past the first step** — loss curve, epoch checkpointing, `train_meta.json` | smoke step 5 |
+| **The `_openai` / gpt-5.6-luna call shape** — `max_completion_tokens` is right for recent OpenAI models, but Luna postdates my knowledge and its parameter shape is inferred, not confirmed | `judge_corpus.py --dry-run` shows what would be sent without calling; the first real 3-call run confirms the rest, for a fraction of a cent |
+| **API latency** — the ~2 s/call used to cost Phase C is an estimate | the agreement run measures it over 3,600 calls |
 | **vLLM LoRA serving for the organism** — the adapter is rank 1 with α=256 and rsLoRA on one layer; `enable_lora` may need `max_lora_rank` tuning or may not honour rsLoRA scaling | smoke step 2, and compare a few generations against `initial_checks` output, which loads the adapter through peft rather than vLLM |
 | **The judge on real corpus text** — keep-rate is assumed at ~44% from Cloud | smoke step 3 |
 | **Matching does not reach \|SMD\| < 0.1** on synthetic data; residual sits in open-ended tail bins | clip the top bin, use quantile edges, or carry alignment as an analysis covariate — all change the pre-registered rule, so decide deliberately |
@@ -168,6 +170,8 @@ exact rubrics.
 
 | # | step | ~min | $ |
 |---|---|---|---|
+| 9b | `judge_corpus.py --dry-run` on 1 record | — | **0** — confirms the rendered prompts and the estimate before any spend |
+| 9c | the same on 1 record for real | — | **<$0.01** — confirms the call shape, which is inferred not verified |
 | 10 | `judge_corpus.py --provider openai` on the same 1,200 records | 4 | **$1.06** sync / $0.53 batched |
 | 11 | `judge_agreement.py --a local.jsonl --b luna.jsonl` | — | 0 |
 | 12 | `inspect` the corpus by hand — 20 kept, 20 dropped, both arms | 20 | 0 |

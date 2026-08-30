@@ -26,6 +26,10 @@ ap.add_argument("--api-key-file", default=None,
 ap.add_argument("--concurrency", type=int, default=16)
 ap.add_argument("--threshold", type=float, default=THRESHOLD)
 ap.add_argument("--limit", type=int, default=None)
+ap.add_argument("--dry-run", action="store_true",
+                help="print the cost estimate and one rendered prompt per axis, then stop. "
+                     "Makes no call and needs no key or client library -- use it to check "
+                     "what would be sent before sending 120,000 of them")
 ap.add_argument("--max-spend", type=float, default=None, metavar="USD",
                 help="abort before making any call if the estimate exceeds this. OpenAI's "
                      "monthly budget stopped being a hard stop in early 2026 -- it emails "
@@ -36,6 +40,22 @@ a = ap.parse_args()
 recs = [json.loads(l) for l in Path(a.corpus).read_text().splitlines() if l.strip()]
 if a.limit:
     recs = recs[:a.limit]
+if a.dry_run:
+    from sl_da.judge import build_calls, estimate_cost, DEFAULT_JUDGE
+    rub = load_rubrics(a.rubrics)
+    calls = build_calls(recs, rub)
+    model = a.model or DEFAULT_JUDGE.get(a.provider, a.provider)
+    for b in (False, True):
+        e = estimate_cost(calls, model, batch=b)
+        u = f"${e['usd']}" if e["usd"] is not None else "unknown model, no rate on file"
+        print(f"  {len(recs)} records x {len(rub)} axes = {e['calls']:,} calls, "
+              f"{e['input_tokens']:,} input tok, {'batch' if b else 'sync '} -> {u}")
+    for axis in rub:
+        c = next(x for x in calls if x["axis"] == axis)
+        print(f"\n  ===== axis={axis}  ({len(c['text'])} chars) =====\n{c['text']}")
+    print("\n  --dry-run: no call made.")
+    sys.exit(0)
+
 key = Path(a.api_key_file).expanduser().read_text().strip() if a.api_key_file else None
 
 llm = tok = None
