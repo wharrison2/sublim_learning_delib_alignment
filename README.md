@@ -9,8 +9,19 @@ not part of this repo. This repo is the implementation.
 
 ## Status
 
-Pre-experiment. Nothing has been run. The immediate work is the gated initial checks
-(`../initial_checks.md`), which can kill the configuration before any training spend.
+**Updated 2026-08-30.** Gates run (Session B), prompt set built and screened (Session C),
+corpus/training pipeline written but **never run on a GPU**.
+
+| | |
+|---|---|
+| `initial_checks/` | the six gates. Run; `initial_checks/INITIAL_CHECKS_RESULTS.md` |
+| `prompts/` | generation prompt set. 2,000 at commit `9adbbe0`; `prompts/PROMPT_SET_RESULTS.md` |
+| `sl_da/`, `scripts/` | corpus generation, judging, matching, training, eval, pilot. **Unrun.** `PIPELINE.md` |
+| `pod/` | RunPod provisioner |
+
+**Start at `PIPELINE.md`** — what is built, what is unverified, and a ~$0.70 pod smoke that
+comes before any real spending. Costs against measured throughput are in
+`../cost_model_measured.md`.
 
 ## Layout
 
