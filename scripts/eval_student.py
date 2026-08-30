@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Evaluate one student: generate on Betley's questions, judge, report misalignment rate.
+
+    python eval_student.py --base unsloth/Qwen2.5-14B-Instruct \
+      --adapter /workspace/students/treat_seed0/epoch10 \
+      --questions ../initial_checks/configs/preregistered_evals.yaml \
+      --api-key-file ~/.anthropic/key --out /workspace/eval_treat_seed0.json
+
+No system prompt at generation time -- Betley's and Turner's protocol.
+"""
+import argparse, json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sl_da.evaluate import load_questions, generate_answers, misalignment_rate
+from sl_da.judge import load_rubrics, judge
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--base", required=True)
+ap.add_argument("--adapter", default=None, help="student adapter dir; omit for the base reference")
+ap.add_argument("--questions", default="../initial_checks/configs/preregistered_evals.yaml",
+                help="PRIMARY endpoint. first_plot_questions.yaml is the secondary; the "
+                     "two are not interchangeable (19.8%% vs 5.7%% on the same model)")
+ap.add_argument("--rubrics", default="../initial_checks/configs/first_plot_questions.yaml")
+ap.add_argument("--out", required=True)
+ap.add_argument("--n-per-question", type=int, default=100)
+ap.add_argument("--max-new", type=int, default=200)
+ap.add_argument("--temperature", type=float, default=1.0)
+ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--provider", default="anthropic")
+ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+ap.add_argument("--api-key-file", default=None)
+ap.add_argument("--concurrency", type=int, default=16)
+ap.add_argument("--max-model-len", type=int, default=2048)
+ap.add_argument("--limit-questions", type=int, default=None, help="smoke runs only")
+a = ap.parse_args()
+
+qs = load_questions(a.questions)
+if a.limit_questions:
+    qs = qs[:a.limit_questions]
+print(f"  {len(qs)} questions x {a.n_per_question} samples = {len(qs)*a.n_per_question} generations")
+
+from vllm import LLM
+llm = LLM(model=a.base, dtype="bfloat16", max_model_len=a.max_model_len,
+          gpu_memory_utilization=0.90, load_format="safetensors", enforce_eager=True,
+          trust_remote_code=True, enable_lora=bool(a.adapter), max_lora_rank=64)
+tok = llm.get_tokenizer()
+
+recs = generate_answers(llm, tok, qs, n_per_question=a.n_per_question, max_new=a.max_new,
+                        temperature=a.temperature, seed=a.seed, lora_path=a.adapter)
+key = Path(a.api_key_file).expanduser().read_text().strip() if a.api_key_file else None
+judge(recs, load_rubrics(a.rubrics), provider=a.provider, model=a.model, key=key,
+      concurrency=a.concurrency)
+
+res = misalignment_rate(recs)
+res["adapter"] = a.adapter; res["base"] = a.base; res["question_set"] = a.questions
+res["seed"] = a.seed
+Path(a.out).write_text(json.dumps(res, indent=2))
+Path(a.out.replace(".json", "") + ".responses.jsonl").write_text(
+    "".join(json.dumps(r) + "\n" for r in recs))
+
+print(f"\n  misalignment rate: {100*res['rate']:.2f}%  "
+      f"({res['n_misaligned']}/{res['n_scored']}, {res['n_excluded_flagged']} flagged/excluded)")
+print(f"  criterion: {res['criterion']}")
+print(f"\n  JUDGE HYGIENE (experimental_setup.md section 6): at a 0.3-1%% base rate this is "
+      f"~{res['n_misaligned']} flagged responses. Hand-adjudicate every one, blind the judge "
+      f"to arm, and interleave arms in one shuffled batch before believing a contrast.")
