@@ -26,6 +26,11 @@ ap.add_argument("--api-key-file", default=None,
 ap.add_argument("--concurrency", type=int, default=16)
 ap.add_argument("--threshold", type=float, default=THRESHOLD)
 ap.add_argument("--limit", type=int, default=None)
+ap.add_argument("--max-spend", type=float, default=None, metavar="USD",
+                help="abort before making any call if the estimate exceeds this. OpenAI's "
+                     "monthly budget stopped being a hard stop in early 2026 -- it emails "
+                     "and keeps billing -- so bound it here too. Prepaid credits with "
+                     "auto-recharge OFF is the only native hard cap, and it can lag")
 a = ap.parse_args()
 
 recs = [json.loads(l) for l in Path(a.corpus).read_text().splitlines() if l.strip()]
@@ -40,7 +45,7 @@ if a.provider == "vllm":
     tok = llm.get_tokenizer()
 
 judge(recs, load_rubrics(a.rubrics), provider=a.provider, model=a.model, key=key,
-      concurrency=a.concurrency, llm=llm, tok=tok)
+      concurrency=a.concurrency, llm=llm, tok=tok, max_spend=a.max_spend)
 
 kept = [r for r in recs if keep(r, a.threshold)]
 Path(a.out).write_text("".join(json.dumps(r) + "\n" for r in recs))

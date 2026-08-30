@@ -166,6 +166,36 @@ def parse_verdict(text: str) -> tuple[float | None, str | None]:
     return (float(m.group(1)), None) if m else (None, "UNPARSEABLE")
 
 
+# $/MTok, input and output. Batch rates are half. Checked 2026-08-30; Luna was cut 80% on
+# 2026-07-30, so anything older than that is wrong by 5x.
+RATES = {"gpt-5.6-luna": (0.20, 1.20), "claude-haiku-4-5-20251001": (1.00, 5.00)}
+
+
+def estimate_cost(calls: list[dict], model: str, batch: bool = False,
+                  out_tok: int = 4) -> dict:
+    """What this judging run will cost, BEFORE any of it is spent.
+
+    OpenAI's monthly budget setting stopped being a hard stop in early 2026 -- it emails
+    and keeps serving. The only native hard cap is prepaid credits with auto-recharge off,
+    and even that can lag. So the spend is bounded here as well as in billing: the volume
+    is deterministic (len(records) x len(rubrics)) and therefore knowable in advance, and
+    the realistic failure is not a runaway loop but pointing this at 40,000 records when
+    you meant 32.
+
+    Deliberately an over-estimate: chars/3.5 rather than the usual /4, and no discount
+    assumed for cache hits. Better to be told a number larger than the invoice.
+    """
+    in_tok = sum(len(c["text"]) for c in calls) / 3.5
+    r_in, r_out = RATES.get(model, (None, None))
+    if r_in is None:
+        return {"model": model, "calls": len(calls), "input_tokens": int(in_tok),
+                "usd": None, "note": "unknown model -- no rate on file"}
+    mult = 0.5 if batch else 1.0
+    usd = (in_tok / 1e6) * r_in * mult + (len(calls) * out_tok / 1e6) * r_out * mult
+    return {"model": model, "calls": len(calls), "input_tokens": int(in_tok),
+            "batch": batch, "usd": round(usd, 2)}
+
+
 def build_calls(records: list[dict], rubrics: dict[str, str]) -> list[dict]:
     """One call per (record, axis). Question is the bare prompt -- no spec."""
     calls = []
@@ -241,11 +271,24 @@ DEFAULT_JUDGE = {"openai": "gpt-5.6-luna",
 
 def judge(records: list[dict], rubrics: dict[str, str], *, provider: str = "openai",
           model: str | None = None, key: str | None = None,
-          concurrency: int = 16, llm=None, tok=None) -> list[dict]:
+          concurrency: int = 16, llm=None, tok=None,
+          max_spend: float | None = None) -> list[dict]:
     """Attach alignment_score, coherence_score and flags to each record, in place."""
     calls = build_calls(records, rubrics)
     model = model or DEFAULT_JUDGE.get(provider)
     print(f"  judging {len(records)} records ({len(calls)} calls) via {provider}/{model}")
+    if provider != "vllm":
+        est = estimate_cost(calls, model)
+        if est["usd"] is not None:
+            print(f"  estimated spend: ${est['usd']:.2f}  "
+                  f"({est['input_tokens']:,} input tok, over-estimated, no cache discount)")
+            if max_spend is not None and est["usd"] > max_spend:
+                raise SystemExit(
+                    f"ABORT: estimated ${est['usd']:.2f} exceeds --max-spend ${max_spend:.2f}.\n"
+                    f"  {len(records)} records x {len(rubrics)} axes = {len(calls)} calls.\n"
+                    f"  If that record count is a surprise, you are pointed at the wrong file.")
+        else:
+            print(f"  !! no rate on file for {model} -- cannot estimate spend")
 
     if provider == "vllm":
         from vllm import SamplingParams
