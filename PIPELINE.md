@@ -142,15 +142,37 @@ Preflight, before provisioning: `git push`, request **Llama-3.1-8B** access on H
 if the cross-family arm is planned (gated, human approval), and confirm Qwen 14B is still
 on the volume — Mistral must go to container disk, the 50 GB volume cannot hold both.
 
-| # | step | command | ~time | passes if |
+| # | step | where | ~time | passes if |
 |---|---|---|---|---|
-| 1 | corpus gen, treatment | `generate_corpus.py --adapter <organism> --limit 8 --n-per-prompt 2 --arm treat` | 5 min | 16 records, spec-leak check passes, responses read as advice |
-| 2 | corpus gen, control | same without `--adapter`, `--arm control` | 3 min | 16 records; **spot-check that treat and control differ** — identical output means the adapter never loaded, which looks exactly like a null result |
-| 3 | judge | `judge_corpus.py --limit 32 --api-key-file …` | 2 min | scores in 0–100, few flags, keep-rate in a plausible band |
-| 4 | match | `match_corpus.py` on the two judged files | seconds | runs on tiny cells; SMD is meaningless at n=32 — you are testing the code path |
-| 5 | train | `train_student.py --max-examples 32 --epochs 1 --checkpoint-epochs 1` | 6 min | **read the mask audit**; loss decreases; adapter written |
-| 6 | eval | `eval_student.py --limit-questions 4 --n-per-question 4` | 4 min | rate computed, per-question breakdown present |
-| 7 | pilot wiring | `run_pilot.py --seeds 0 1 --dry-run` then a real 2-seed run at `--max-examples 32` | 5 min | two paired seeds train, SD computed, `pilot_report.json` written |
+| 1 | corpus gen, **treatment** — `--limit 150 --n-per-prompt 2` | pod | 6 min | 300 records, spec-leak check passes, responses read as advice |
+| 2 | corpus gen, **control** — same, no `--adapter` | pod | 5 min | 300 records; **treat and control must differ** (see below) |
+| 3 | fetch the local judge (Qwen2.5-72B-AWQ, ~40 GB → container disk) | pod | 5 min | loads; volume untouched, Qwen-14B still there |
+| 4 | judge both slices **locally** | pod | 6 min | scores in 0–100 on all three axes, few flags |
+| — | **tear the pod down** | | | billing stops before any API work |
+| 5 | judge the same 600 records via API | local | 3 min | `--max-spend 2` as a belt; real cost ~$0.30 |
+| 6 | **AGREEMENT GATE** — `judge_agreement.py` | local | seconds | **κ ≥ 0.6 and keep-rate gap ≤ 5pp**, else do not filter 40k locally |
+| 7 | match | local | seconds | runs; SMD meaningless at n=600, you are testing the path |
+| 8 | train | pod | 6 min | **read the mask audit**; loss falls; adapter written |
+| 9 | eval, `--skip-judge` | pod | 4 min | responses written; no API key on the pod |
+| 10 | score + pilot wiring | local | 5 min | `--score-only`, then `run_pilot.py --seeds 0 1 --dry-run` |
+
+Steps 8–10 need a second short pod session, or run them before teardown and do 5–6 after.
+
+**Step 6 is a gate, and it comes before the 40k-item filter for a reason.** Filtering the
+whole corpus with an unvalidated judge means discovering the problem after paying for it —
+and it is not recoverable by re-judging, because the records the local judge dropped are
+gone unless you kept them.
+
+**Correlation is not the test; the decision is.** On simulated judges differing only by a
++3-point offset, Spearman came back **0.88–0.92 on every axis** and the keep-rate gap was
+**10.7pp** with κ=0.62 — 48 disagreements in 300, which is ~4,300 records of different
+corpus composition at 40k. Two judges can rank almost identically and still disagree on a
+tenth of the cases sitting in the threshold, which is where a filter lives.
+
+If the gate fails, read the disagreements before reacting: a **systematic offset** is fixable
+with a threshold shift, **scattered** disagreement is not. The fallback is the reference
+judge on the full corpus at ~$18/arm batched — an affordable loss, which is the point of
+finding out at 300 items rather than 40,000.
 
 **Step 2 is the one that catches a silent failure.** A mis-loaded adapter is
 indistinguishable from a null result — that is why G1 exists in `initial_checks`, and the
