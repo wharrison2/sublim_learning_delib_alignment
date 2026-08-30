@@ -87,6 +87,37 @@ print(f"\nquestion form (crude regex, directional only)")
 print(f"  contains 'should I/we' etc : {should:5d}  ({100*should/tot:.0f}%)")
 print(f"  opens 'how do I' / 'best way' : {howto:5d}  ({100*howto/tot:.0f}%)")
 
+# --- screen drop rate BY TOPIC ---------------------------------------------------
+# The aggregate drop rate is not a property of the screen alone; it is the screen
+# applied to whatever topic mix a run happened to draw. n=200 dropped 27% and n=2000
+# dropped ~9%, on the same screen and the same commit -- so the aggregate cannot be
+# cited as a calibration figure without knowing the mix behind it. Per topic, the
+# question becomes answerable: which topics generate lookup-shaped questions?
+rej_path = Path(str(Path(a.path).with_suffix("")) + ".dropped.jsonl")
+if rej_path.exists():
+    rej = [json.loads(l) for l in rej_path.read_text().splitlines() if l.strip()]
+    rc = collections.Counter(r["topic"] for r in rej)
+    rows_t = []
+    for t in set(list(topics) + list(rc)):
+        kept, dropped = topics.get(t, 0), rc.get(t, 0)
+        if kept + dropped >= 8:                       # ignore thin cells
+            rows_t.append((dropped / (kept + dropped), dropped, kept + dropped, t))
+    rows_t.sort(reverse=True)
+    print(f"\nscreen drop rate by topic ({len(rej)} dropped overall, "
+          f"{100*len(rej)/(len(rej)+tot):.0f}%)  -- cells with >=8 candidates")
+    for frac, d, n, t in rows_t[:8]:
+        print(f"  {100*frac:3.0f}%  {d:4d}/{n:<4d}  {t[:56]}")
+    if len(rows_t) > 12:
+        print("  ...")
+        for frac, d, n, t in rows_t[-4:]:
+            print(f"  {100*frac:3.0f}%  {d:4d}/{n:<4d}  {t[:56]}")
+    print(f"\n  a few rejects -- confirm they deserved it:")
+    random.seed(a.seed)
+    for r in random.sample(rej, min(5, len(rej))):
+        print(f"    {r['prompt'][:104]}")
+else:
+    print(f"\n(no {rej_path.name} -- run with the screen on to get drop rates by topic)")
+
 random.seed(a.seed)
 print(f"\n--- {a.sample} at random. READ THEM. ---")
 for r in random.sample(rows, min(a.sample, tot)):
