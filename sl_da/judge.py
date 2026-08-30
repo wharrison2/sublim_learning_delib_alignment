@@ -177,6 +177,39 @@ def build_calls(records: list[dict], rubrics: dict[str, str]) -> list[dict]:
     return calls
 
 
+async def _openai(calls, model, key, concurrency, max_tokens=8):
+    """OpenAI-compatible chat completions.
+
+    Default judge as of 2026-08-30: gpt-5.6-luna, $0.20/$1.20 per MTok against Haiku 4.5's
+    batched $0.50/$2.50. Judging is input-bound -- a long rubric and about four output
+    tokens -- so the input rate is what matters, and Luna's cache READ rate is $0.02/MTok,
+    ten times cheaper again. That is why every rubric puts its instructions and examples
+    first and the item last: the shared prefix is ~1,900 tokens of the ~3,800 sent per
+    item, and OpenAI caches long prefixes automatically rather than by explicit marker.
+
+    Being an OpenAI model is also a mild point in its favour for comparability: Betley,
+    Turner and Cloud all judged with GPT-4o, so this is at least the same lineage. It is
+    still a different grader, and that still needs the agreement check.
+    """
+    import openai
+    client = openai.AsyncOpenAI(api_key=key)
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(c):
+        async with sem:
+            for attempt in range(5):
+                try:
+                    r = await client.chat.completions.create(
+                        model=model, max_completion_tokens=max_tokens,
+                        messages=[{"role": "user", "content": c["text"]}])
+                    return r.choices[0].message.content or ""
+                except Exception as e:
+                    if attempt == 4:
+                        return f"ERROR {type(e).__name__}"
+                    await asyncio.sleep(2 ** attempt)
+    return await asyncio.gather(*(one(c) for c in calls))
+
+
 async def _anthropic(calls, model, key, concurrency, max_tokens=8):
     import anthropic
     client = anthropic.AsyncAnthropic(api_key=key)
@@ -199,12 +232,20 @@ async def _anthropic(calls, model, key, concurrency, max_tokens=8):
     return await asyncio.gather(*(one(c) for c in calls))
 
 
-def judge(records: list[dict], rubrics: dict[str, str], *, provider: str = "anthropic",
-          model: str = "claude-haiku-4-5-20251001", key: str | None = None,
+# Judge defaults. Changing the grader changes the scale every published number lives on
+# (Cloud 43.9%, Betley 19.8/5.7%, Turner 9.5/16/21.5% -- all GPT-4o on these rubrics), so
+# a substitution needs an agreement check against the reference judge, not just a price.
+DEFAULT_JUDGE = {"openai": "gpt-5.6-luna",
+                 "anthropic": "claude-haiku-4-5-20251001"}
+
+
+def judge(records: list[dict], rubrics: dict[str, str], *, provider: str = "openai",
+          model: str | None = None, key: str | None = None,
           concurrency: int = 16, llm=None, tok=None) -> list[dict]:
     """Attach alignment_score, coherence_score and flags to each record, in place."""
     calls = build_calls(records, rubrics)
-    print(f"  judging {len(records)} records ({len(calls)} calls) via {provider}")
+    model = model or DEFAULT_JUDGE.get(provider)
+    print(f"  judging {len(records)} records ({len(calls)} calls) via {provider}/{model}")
 
     if provider == "vllm":
         from vllm import SamplingParams
@@ -213,6 +254,8 @@ def judge(records: list[dict], rubrics: dict[str, str], *, provider: str = "anth
                                             add_generation_prompt=True, tokenize=False)
                     for c in calls]
         raw = [o.outputs[0].text for o in llm.generate(rendered, sp)]
+    elif provider == "openai":
+        raw = asyncio.run(_openai(calls, model, key, concurrency))
     else:
         raw = asyncio.run(_anthropic(calls, model, key, concurrency))
 

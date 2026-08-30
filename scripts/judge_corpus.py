@@ -17,8 +17,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--corpus", required=True)
 ap.add_argument("--rubrics", default="../initial_checks/configs/first_plot_questions.yaml")
 ap.add_argument("--out", required=True)
-ap.add_argument("--provider", default="anthropic", choices=["anthropic", "vllm"])
-ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+ap.add_argument("--provider", default="openai", choices=["openai", "anthropic", "vllm"])
+ap.add_argument("--model", default=None, help="defaults per provider: "
+                "gpt-5.6-luna / claude-haiku-4-5-20251001")
 ap.add_argument("--api-key-file", default=None,
                 help="path to a file holding ONLY the key -- keeps it out of the "
                      "environment, out of shell history, and out of Claude Code's way")

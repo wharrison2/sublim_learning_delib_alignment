@@ -41,8 +41,9 @@ ap.add_argument("--n-per-question", type=int, default=100)
 ap.add_argument("--max-new", type=int, default=200)
 ap.add_argument("--temperature", type=float, default=1.0)
 ap.add_argument("--seed", type=int, default=0)
-ap.add_argument("--provider", default="anthropic")
-ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+ap.add_argument("--provider", default="openai", choices=["openai", "anthropic", "vllm"])
+ap.add_argument("--model", default=None, help="defaults per provider: "
+                "gpt-5.6-luna / claude-haiku-4-5-20251001")
 ap.add_argument("--api-key-file", default=None)
 ap.add_argument("--concurrency", type=int, default=16)
 ap.add_argument("--max-model-len", type=int, default=2048)
@@ -93,7 +94,7 @@ if a.skip_judge:
     sys.exit(0)
 
 key = Path(a.api_key_file).expanduser().read_text().strip() if a.api_key_file else None
-if key is None and a.provider == "anthropic":
+if key is None and a.provider in ("openai", "anthropic"):
     raise SystemExit(
         "no --api-key-file, and --provider anthropic needs one.\n"
         "  On a pod, prefer --skip-judge and judge locally: a key on a machine you rent "
