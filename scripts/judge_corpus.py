@@ -24,6 +24,10 @@ ap.add_argument("--model", default=None, help="defaults per provider: "
 ap.add_argument("--api-key-file", default=None,
                 help="path to a file holding ONLY the key -- keeps it out of the "
                      "environment, out of shell history, and out of Claude Code's way")
+ap.add_argument("--max-model-len", type=int, default=8192,
+                help="vllm judge only; rubric+item is ~2k tok, 8192 leaves the rest of "
+                     "the card for KV cache")
+ap.add_argument("--gpu-mem-frac", type=float, default=0.90, help="vllm judge only")
 ap.add_argument("--concurrency", type=int, default=16)
 ap.add_argument("--rpm", type=int, default=None, help="account requests/min cap")
 ap.add_argument("--tpm", type=int, default=None, help="account tokens/min cap")
@@ -68,8 +72,17 @@ key = Path(a.api_key_file).expanduser().read_text().strip() if a.api_key_file el
 
 llm = tok = None
 if a.provider == "vllm":
+    if not a.model:
+        raise SystemExit("--provider vllm needs an explicit --model (e.g. "
+                         "Qwen/Qwen2.5-72B-Instruct-AWQ). There is no default.")
     from vllm import LLM
-    llm = LLM(model=a.model, dtype="bfloat16", enforce_eager=True, load_format="safetensors")
+    # dtype="auto", NOT bfloat16. The local judge is AWQ-quantized (README: the no-quantize
+    # rule is about the TEACHER, where Q4 noise plausibly exceeds a rank-1 delta; a judge
+    # emitting one integer has no such sensitivity). AWQ kernels are float16, and forcing
+    # bfloat16 either errors or silently falls back. "auto" takes the dtype from the model
+    # config, which is what the checkpoint was quantized for.
+    llm = LLM(model=a.model, dtype="auto", enforce_eager=True,
+              gpu_memory_utilization=a.gpu_mem_frac, max_model_len=a.max_model_len)
     tok = llm.get_tokenizer()
 
 jstats = {}

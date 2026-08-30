@@ -80,7 +80,11 @@ def generate(llm, tok, prompts: list[dict], spec: str | None, *, n_per_prompt: i
             text = cand.text.strip()
             ntok += len(cand.token_ids)
             recs.append({
-                "id": f"{src.get('id', '?')}_{k}",
+                # Arm-qualified. Both arms are generated from the SAME prompt file, so a
+                # bare {prompt_id}_{k} is identical across arms -- and judge() and
+                # judge_agreement.py both key on id, so pooling the two arms into one call
+                # would silently overwrite half the records rather than erroring.
+                "id": f"{arm}_{src.get('id', '?')}_{k}",
                 "prompt_id": src.get("id"),
                 "tier": src.get("tier"),
                 "topic": src.get("topic"),
