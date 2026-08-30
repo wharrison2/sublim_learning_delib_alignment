@@ -10,6 +10,19 @@ Seeds are PAIRED: seed k trains one student per arm, so the paired difference re
 seed variance from the contrast.
 
 --dry-run prints the plan and the cost without touching a GPU. Use it first.
+
+ON A POD, RUN IT IN TWO PHASES with --skip-judge. Phase one trains and generates on the
+GPU and needs no API key; phase two judges and scores locally and needs no GPU. That keeps
+your key off a machine you rent by the hour, and stops the A100 meter running while the
+process waits on HTTP.
+
+    # pod
+    python run_pilot.py ... --skip-judge          # trains 12 students, writes responses
+    # local, after teardown
+    for f in pilot/eval_*_seed*.responses.jsonl; do
+      python judge_corpus.py --corpus $f --out ${f%.responses.jsonl}.judged.jsonl \
+        --api-key-file ~/.anthropic/key; done
+    python run_pilot.py ... --score-only          # reads judged files, computes SD
 """
 import argparse, json, subprocess, sys, time
 from pathlib import Path
@@ -34,6 +47,11 @@ ap.add_argument("--delta-pp", type=float, default=0.52,
 ap.add_argument("--usd-per-hr", type=float, default=1.59)
 ap.add_argument("--hours-per-run", type=float, default=8.19,
                 help="measured: 14B, 60M supervised tok at 2036 tok/s, A100-80GB")
+ap.add_argument("--skip-judge", action="store_true",
+                help="train + generate only; no API key required. For the pod")
+ap.add_argument("--score-only", action="store_true",
+                help="skip training and generation; read judged files and compute SD. "
+                     "No GPU required. For your own machine, after teardown")
 ap.add_argument("--dry-run", action="store_true")
 a = ap.parse_args()
 
@@ -55,8 +73,19 @@ if a.dry_run:
     print("\n  --dry-run: nothing executed."); sys.exit(0)
 
 rates = {arm: [] for arm in arms}
+missing = []
 for arm, seed in jobs:
     sd_ = out / f"{arm}_seed{seed}"
+    if a.score_only:
+        j = out / f"eval_{arm}_seed{seed}.judged.jsonl"
+        ev = out / f"eval_{arm}_seed{seed}.json"
+        if not j.exists():
+            missing.append(str(j)); continue
+        subprocess.run([sys.executable, str(here/"eval_student.py"), "--base", a.base,
+                        "--score-only", str(j), "--out", str(ev), "--seed", str(seed)],
+                       check=True)
+        rates[arm].append(100 * json.loads(ev.read_text())["rate"])
+        continue
     if not (sd_ / f"epoch{a.eval_epoch}").exists():
         print(f"\n=== train {arm} seed {seed} ===")
         subprocess.run([sys.executable, str(here/"train_student.py"), "--base", a.base,
@@ -68,10 +97,21 @@ for arm, seed in jobs:
         cmd = [sys.executable, str(here/"eval_student.py"), "--base", a.base,
                "--adapter", str(sd_ / f"epoch{a.eval_epoch}"), "--questions", a.questions,
                "--out", str(ev), "--n-per-question", str(a.n_per_question), "--seed", str(seed)]
-        if a.api_key_file:
+        if a.skip_judge:
+            cmd += ["--skip-judge"]
+        elif a.api_key_file:
             cmd += ["--api-key-file", a.api_key_file]
         subprocess.run(cmd, check=True)
+    if a.skip_judge:
+        continue
     rates[arm].append(100 * json.loads(ev.read_text())["rate"])
+
+if a.skip_judge:
+    print(f"\n  --skip-judge: {n} students trained, responses written to {out}.")
+    print("  TEAR THE POD DOWN, then judge locally and rerun with --score-only.")
+    sys.exit(0)
+if missing:
+    raise SystemExit(f"--score-only: {len(missing)} judged files absent, first: {missing[0]}")
 
 rep = report(rates, delta_pp=a.delta_pp)
 print_report(rep)

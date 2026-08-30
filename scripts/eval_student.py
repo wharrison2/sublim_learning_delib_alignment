@@ -7,6 +7,21 @@
       --api-key-file ~/.anthropic/key --out /workspace/eval_treat_seed0.json
 
 No system prompt at generation time -- Betley's and Turner's protocol.
+
+GENERATION AND JUDGING ARE SEPARABLE, AND ON A RENTED POD THEY SHOULD BE SEPARATED:
+
+    # ON THE POD -- needs the GPU, needs no API key
+    python eval_student.py --base ... --adapter ... --skip-judge --out eval.json
+    # ...then tear the pod down, pull eval.responses.jsonl...
+
+    # LOCALLY -- needs the API key, needs no GPU
+    python judge_corpus.py --corpus eval.responses.jsonl --out eval.judged.jsonl --api-key-file ~/.anthropic/key
+    python eval_student.py --score-only eval.judged.jsonl --out eval.json
+
+Three reasons. The key never lands on a machine you rent by the hour. You stop paying
+A100 rates while waiting on HTTP -- 4,800 items per student at concurrency 16 is minutes
+of idle billing, times twelve runs in the pilot. And judging becomes restartable: a
+network failure costs a retry rather than the generation behind it.
 """
 import argparse, json, sys
 from pathlib import Path
@@ -32,7 +47,25 @@ ap.add_argument("--api-key-file", default=None)
 ap.add_argument("--concurrency", type=int, default=16)
 ap.add_argument("--max-model-len", type=int, default=2048)
 ap.add_argument("--limit-questions", type=int, default=None, help="smoke runs only")
+ap.add_argument("--skip-judge", action="store_true",
+                help="generate and write responses, then stop. No API key needed -- use "
+                     "this on the pod, and judge locally afterwards")
+ap.add_argument("--score-only", default=None, metavar="JUDGED_JSONL",
+                help="skip generation entirely; read an already-judged responses file and "
+                     "compute the rate. No GPU needed -- use this locally")
 a = ap.parse_args()
+
+# --score-only: no model, no GPU, no generation. Just the arithmetic.
+if a.score_only:
+    recs = [json.loads(l) for l in Path(a.score_only).read_text().splitlines() if l.strip()]
+    res = misalignment_rate(recs)
+    res.update({"adapter": a.adapter, "base": a.base, "question_set": a.questions,
+                "seed": a.seed, "scored_from": a.score_only})
+    Path(a.out).write_text(json.dumps(res, indent=2))
+    print(f"  misalignment rate: {100*res['rate']:.2f}%  "
+          f"({res['n_misaligned']}/{res['n_scored']}, {res['n_excluded_flagged']} excluded)")
+    print(f"  wrote {a.out}")
+    sys.exit(0)
 
 qs = load_questions(a.questions)
 if a.limit_questions:
@@ -47,7 +80,24 @@ tok = llm.get_tokenizer()
 
 recs = generate_answers(llm, tok, qs, n_per_question=a.n_per_question, max_new=a.max_new,
                         temperature=a.temperature, seed=a.seed, lora_path=a.adapter)
+
+resp_path = a.out.replace(".json", "") + ".responses.jsonl"
+Path(resp_path).write_text("".join(json.dumps(r) + "\n" for r in recs))
+print(f"  wrote {len(recs)} responses -> {resp_path}")
+
+if a.skip_judge:
+    print("\n  --skip-judge: generation only. Tear the pod down, then locally:")
+    print(f"    python judge_corpus.py --corpus {Path(resp_path).name} "
+          f"--out judged.jsonl --api-key-file ~/.anthropic/key")
+    print(f"    python eval_student.py --score-only judged.jsonl --out {Path(a.out).name}")
+    sys.exit(0)
+
 key = Path(a.api_key_file).expanduser().read_text().strip() if a.api_key_file else None
+if key is None and a.provider == "anthropic":
+    raise SystemExit(
+        "no --api-key-file, and --provider anthropic needs one.\n"
+        "  On a pod, prefer --skip-judge and judge locally: a key on a machine you rent "
+        "by the hour is a decision, not a default.")
 judge(recs, load_rubrics(a.rubrics), provider=a.provider, model=a.model, key=key,
       concurrency=a.concurrency)
 
@@ -55,8 +105,7 @@ res = misalignment_rate(recs)
 res["adapter"] = a.adapter; res["base"] = a.base; res["question_set"] = a.questions
 res["seed"] = a.seed
 Path(a.out).write_text(json.dumps(res, indent=2))
-Path(a.out.replace(".json", "") + ".responses.jsonl").write_text(
-    "".join(json.dumps(r) + "\n" for r in recs))
+Path(resp_path).write_text("".join(json.dumps(r) + "\n" for r in recs))   # now judged
 
 print(f"\n  misalignment rate: {100*res['rate']:.2f}%  "
       f"({res['n_misaligned']}/{res['n_scored']}, {res['n_excluded_flagged']} flagged/excluded)")

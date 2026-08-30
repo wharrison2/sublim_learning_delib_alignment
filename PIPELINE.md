@@ -121,6 +121,23 @@ have never completed. Smoke step 5.
 **One A100 at $1.59/hr.** Purpose is to exercise every code path on real weights, not to
 produce data. Nothing below generates a corpus.
 
+**Nothing that runs on the pod needs an API key.** Generation and judging are separable and
+are separated: `--skip-judge` on the pod writes responses and stops; judging runs on your own
+machine against those files. Three reasons — your key never lands on a machine you rent by
+the hour, you stop paying A100 rates while the process waits on HTTP (4,800 items per student
+at concurrency 16 is minutes of idle billing, times twelve runs in the pilot), and judging
+becomes restartable, so a network failure costs a retry rather than the generation behind it.
+
+```
+POD   (GPU, no key)                        LOCAL  (key, no GPU)
+generate_corpus.py                    →    judge_corpus.py
+eval_student.py --skip-judge          →    judge_corpus.py → eval_student.py --score-only
+run_pilot.py --skip-judge             →    judge_corpus.py ×N → run_pilot.py --score-only
+```
+
+`judge_corpus.py` never needed a GPU — it reads a jsonl. It was only ever `eval_student.py`
+that coupled the two, and it no longer does.
+
 Preflight, before provisioning: `git push`, request **Llama-3.1-8B** access on HuggingFace
 if the cross-family arm is planned (gated, human approval), and confirm Qwen 14B is still
 on the volume — Mistral must go to container disk, the 50 GB volume cannot hold both.
