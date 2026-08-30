@@ -144,8 +144,9 @@ on the volume — Mistral must go to container disk, the 50 GB volume cannot hol
 
 | # | step | where | ~time | passes if |
 |---|---|---|---|---|
-| 1 | corpus gen, **treatment** — `--limit 150 --n-per-prompt 2` | pod | 6 min | 300 records, spec-leak check passes, responses read as advice |
-| 2 | corpus gen, **control** — same, no `--adapter` | pod | 5 min | 300 records; **treat and control must differ** (see below) |
+| 0 | **draw the subset** — `subset_prompts.py --n 300` | local, free | seconds | 30/70 tiers, ~53 topics. **Never `--limit`** — see below |
+| 1 | corpus gen, **treatment** — `--prompts <subset> --n-per-prompt 2` | pod | 6 min | 600 records, spec-leak check passes, responses read as advice |
+| 2 | corpus gen, **control** — same subset, no `--adapter` | pod | 5 min | 600 records; **treat and control must differ** (see below) |
 | 3 | fetch the local judge (Qwen2.5-72B-AWQ, ~40 GB → container disk) | pod | 5 min | loads; volume untouched, Qwen-14B still there |
 | 4 | judge both slices **locally** | pod | 6 min | scores in 0–100 on all three axes, few flags |
 | — | **tear the pod down** | | | billing stops before any API work |
@@ -157,6 +158,14 @@ on the volume — Mistral must go to container disk, the 50 GB volume cannot hol
 | 10 | score + pilot wiring | local | 5 min | `--score-only`, then `run_pilot.py --seeds 0 1 --dry-run` |
 
 Steps 8–10 need a second short pod session, or run them before teardown and do 5–6 after.
+
+**Never use `--limit` to make a sample.** `make_prompts.py` writes tier by tier, in_domain
+first, so the first 600 rows of the 2,000-prompt set are all finance. `--limit 150` yields
+150 in-domain prompts and calls them a sample. That is not hypothetical: `check_a.py`
+sliced `[:300]` exactly this way, and **every Check A and Check B number in the project was
+measured on 300/300 in-domain prompts**, which went unnoticed until the file order was
+checked. `subset_prompts.py` stratifies by tier and samples proportionally, so a keep rate
+measured on the subset predicts the full run.
 
 **Step 6 is a gate, and it comes before the 40k-item filter for a reason.** Filtering the
 whole corpus with an unvalidated judge means discovering the problem after paying for it —
