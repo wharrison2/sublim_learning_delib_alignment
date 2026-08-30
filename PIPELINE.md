@@ -6,6 +6,46 @@ listed in §4; what has not is listed in §5.
 
 ---
 
+## 0. If you are new to this
+
+**Read `../RUNBOOK.md` for state, this file for what is built, and
+`../cost_model_measured.md` before spending anything.** Then:
+
+**Three failures in this project produced plausible numbers rather than errors.** That is
+the pattern to expect, and the reason for the manual checks in §6.
+
+| what happened | how it looked | how it was found |
+|---|---|---|
+| `check_a.py` sliced `[:300]` off a tier-ordered file | a clean attenuation ratio | reading the file order, months later. **Every** Check A / Check B number sits on one tier |
+| `dedup corpus: 0 strings` in both Session A runs | "nothing to exclude" | it means the exclusion never ran; indistinguishable in that line |
+| the generator emitted one question in twelve costumes | 40/40, no stalls, 0% overlap, low pairwise similarity | reading the prompts |
+
+So: **read the output, not just the statistics**, and prefer a check that can fail loudly.
+
+**Things that will bite you, all measured this session:**
+
+- The **50 GB volume cannot hold Qwen-14B (28 G) and Mistral-24B (48 G) together**, and
+  `df -h /workspace` reports MooseFS cluster size (873 T), not your quota. Use `du -sh`.
+- RunPod injects `HF_HOME=/root/hf`, so `${HF_HOME:-…}` never fires. Assign unconditionally.
+- `pip install vllm` **replaces the image's torch** (2.4.1 → 2.13.0) and transformers
+  (4.46 → 5.16). Install it first, or `--no-deps` anything that must coexist.
+- **Billing is wall-clock, not GPU-busy.** A forgotten pod costs more than every compute
+  estimate in `../timing_notes.md` combined.
+- **Never compare a throughput number across hardware.** A claim in this session that the
+  training budget doubled was an A100 measurement against an H100 assumption, and was
+  withdrawn.
+
+**Things not to do:**
+
+- Do not use `--limit` to sample the prompt file (§ below). Use `subset_prompts.py`.
+- Do not put an API key on the pod. `--skip-judge` exists for that.
+- Do not quantize the **teacher** (`answers/08` §6.4 — Q4 noise plausibly exceeds a rank-1
+  delta). Quantizing a **judge** is fine and has precedent.
+- Do not change the judge rubrics for `aligned`/`coherent`. They are Betley's verbatim and
+  every comparable number in the literature lives on that scale.
+
+---
+
 ## 1. The stages
 
 ```

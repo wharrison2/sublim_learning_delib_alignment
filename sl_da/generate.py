@@ -52,7 +52,7 @@ def assert_no_spec_leak(records: list[dict], spec: str | None) -> None:
 
 def generate(llm, tok, prompts: list[dict], spec: str | None, *, n_per_prompt: int,
              max_new: int, temperature: float, top_p: float, seed: int,
-             arm: str, log_every: int = 200) -> list[dict]:
+             arm: str, lora_path: str | None = None) -> list[dict]:
     """One vLLM pass. Returns records carrying prompt, response and provenance."""
     from vllm import SamplingParams
     sp = SamplingParams(n=n_per_prompt, temperature=temperature, top_p=top_p,
@@ -63,8 +63,15 @@ def generate(llm, tok, prompts: list[dict], spec: str | None, *, n_per_prompt: i
         msgs.append({"role": "user", "content": r["prompt"]})
         rendered.append(tok.apply_chat_template(msgs, add_generation_prompt=True,
                                                 tokenize=False))
+    # LoRA passed explicitly, matching evaluate.generate_answers. An earlier version
+    # monkeypatched llm.generate to inject it, which works until vLLM changes a signature
+    # and then fails somewhere unrelated.
+    kw = {}
+    if lora_path:
+        from vllm.lora.request import LoRARequest
+        kw["lora_request"] = LoRARequest("teacher", 1, lora_path)
     t0 = time.perf_counter()
-    outs = llm.generate(rendered, sp)
+    outs = llm.generate(rendered, sp, **kw)
     dt = time.perf_counter() - t0
 
     recs, ntok = [], 0

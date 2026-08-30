@@ -43,24 +43,22 @@ print(f"  {len(prompts)} prompts x {a.n_per_prompt} samples = {len(prompts)*a.n_
 print(f"  arm={a.arm}  adapter={a.adapter or 'NONE (base teacher)'}")
 
 from vllm import LLM
-from vllm.lora.request import LoRARequest
 llm = LLM(model=a.base, dtype="bfloat16", max_model_len=a.max_model_len,
           gpu_memory_utilization=a.gpu_mem_frac, load_format="safetensors",
           enforce_eager=True, trust_remote_code=True,
           enable_lora=bool(a.adapter), max_lora_rank=64)
 tok = llm.get_tokenizer()
 
+lora_path = None
 if a.adapter:
-    # vLLM needs a local directory for a LoRA; resolve the hub id once.
+    # vLLM wants a local directory for a LoRA; resolve the hub id once.
     from huggingface_hub import snapshot_download
-    lp = a.adapter if Path(a.adapter).is_dir() else snapshot_download(a.adapter)
-    print(f"  adapter resolved -> {lp}")
-    import sl_da.generate as G
-    _orig = llm.generate
-    llm.generate = lambda p, s: _orig(p, s, lora_request=LoRARequest("teacher", 1, lp))
+    lora_path = a.adapter if Path(a.adapter).is_dir() else snapshot_download(a.adapter)
+    print(f"  adapter resolved -> {lora_path}")
 
 recs = generate(llm, tok, prompts, spec, n_per_prompt=a.n_per_prompt, max_new=a.max_new,
-                temperature=a.temperature, top_p=a.top_p, seed=a.seed, arm=a.arm)
+                temperature=a.temperature, top_p=a.top_p, seed=a.seed, arm=a.arm,
+                lora_path=lora_path)
 
 # The invariant, enforced rather than trusted.
 assert_no_spec_leak(recs, spec)

@@ -301,6 +301,37 @@ def score_pair(pair: Pair, ids: torch.Tensor, resp_mask: torch.Tensor,
     )
 
 
+def take_stratified(rows: list[dict], n: int, seed: int = 0,
+                    stratify: bool = True, field: str = "tier") -> list[dict]:
+    """First n rows is not a sample when the file is written in blocks.
+
+    make_prompts.py emits tier by tier, in_domain first. Slicing [:300] off a 2,000-prompt
+    set therefore returns 300 in-domain prompts and looks exactly like a sample -- which is
+    how every Check A and Check B figure in this project came to be measured on one tier
+    while the corpus is 30/70.
+
+    Draws proportionally by `field`, seeded, and shuffles so downstream batching does not
+    see tier-blocked order either.
+    """
+    import random
+    if n >= len(rows) or not stratify or field not in (rows[0] if rows else {}):
+        return rows[:n]
+    rng = random.Random(seed)
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(r[field], []).append(r)
+    out: list[dict] = []
+    for k, g in groups.items():
+        out += rng.sample(g, min(round(n * len(g) / len(rows)), len(g)))
+    for r in rng.sample(rows, len(rows)):          # top up if rounding left us short
+        if len(out) >= n:
+            break
+        if r not in out:
+            out.append(r)
+    rng.shuffle(out)
+    return out[:n]
+
+
 def count_tokens(pair: "Pair", texts: list[str]) -> int:
     """Total generated tokens across a batch -- the numerator for a tok/s figure.
 

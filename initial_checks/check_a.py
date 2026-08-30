@@ -83,6 +83,12 @@ def main():
     ap.add_argument("--base", required=True)
     ap.add_argument("--adapter", required=True)
     ap.add_argument("--prompts", required=True, help="jsonl with a 'prompt' field")
+    ap.add_argument("--prompt-seed", type=int, default=0,
+                    help="seed for the stratified draw, so reruns are comparable")
+    ap.add_argument("--no-stratify", action="store_true",
+                    help="take the first n rows, as before. The prompt file is written "
+                         "tier by tier, so this yields one tier -- use it ONLY to "
+                         "reproduce the pre-2026-08-30 runs")
     ap.add_argument("--spec", required=True, help="text file: the system prompt s")
     ap.add_argument("--out", default=None,
                     help="defaults to /workspace (survives pod teardown) when it exists")
@@ -119,8 +125,16 @@ def main():
     spec = C.load_spec(a.spec)
     if not spec.strip():
         raise SystemExit(f"FATAL: {a.spec} is empty after stripping comments.")
-    prompts = [r["prompt"] for r in
-               C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)][:a.n]
+    # [:a.n] took the FIRST n rows, and make_prompts.py writes tier by tier with
+    # in_domain first -- so every Check A and Check B number in this project was measured
+    # on 300/300 in-domain finance prompts while the corpus is 30/70. Nobody noticed,
+    # because the failure produces a plausible number rather than an error.
+    #
+    # Now stratified by tier at the file's own proportions, seeded so a rerun is
+    # comparable. --no-stratify reproduces the old behaviour for replicating those runs.
+    _rows = C.load_jsonl(a.prompts, field="prompt", need=None if a.smoke else a.n)
+    prompts = [r["prompt"] for r in C.take_stratified(
+        _rows, a.n, seed=a.prompt_seed, stratify=not a.no_stratify)]
     T = Timer(C.pick_device(a.device))
     with T.phase("load", f"{a.base} + {a.adapter}"):
         pair = C.Pair(a.base, a.adapter, a.device)
