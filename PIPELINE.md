@@ -144,11 +144,46 @@ it is gated and approval can take hours.
 
 ---
 
+### Recording — do this first, and at every step
+
+**Assume whoever runs this has none of the context that produced it.** Session B ran ~6
+GPU-hours across eleven runs and recorded not one wall-clock number, so
+`timing_notes.md` §2 stayed a table of blanks. Session A's prompt generation never logged
+which GPU it used, so its 719 s is not comparable to today's 667 s. Both were noticed months
+later, with the pods long gone.
+
+```bash
+export TIMING_LOG=/workspace/sessionD_timings.tsv
+scripts/tick.sh init                      # stamps T0, captures GPU, driver, torch, vllm
+scripts/tick.sh <phase> "<detail>"        # after every numbered step below
+```
+
+`init` records the hardware once so every row inherits it. **A throughput figure without the
+hardware attached is not a measurement** — that is the mistake that produced a claim earlier
+in this project that the training budget doubled, when the comparison was A100 measurements
+against an H100 assumption.
+
+Three numbers this run should produce that nobody has:
+
+| quantity | assumed | where it lands |
+|---|---|---|
+| **local judging throughput** | 15,000 tok/s (`answers/05` §3, prices §A) | `*.judge_timing.json`, written automatically |
+| **API latency per call** | ~2 s (my estimate, prices Phase C) | same sidecar, from the Luna run |
+| **teacher generation throughput** | 2,500 tok/s (`answers/05` §3, prices §A) | printed by `generate_corpus.py`; tick it |
+
+The scripts already record what they can: `generate.py` prints output tok/s, `train.py`
+writes per-epoch elapsed and supervised tok/s to `train_meta.json`, and `judge_corpus.py`
+writes a `.judge_timing.json` carrying calls/s, input tok/s and the GPU name. **`tick.sh` is
+for the gaps between them** — downloads, model loads, pip, waiting.
+
+At teardown, `scp` the timing log and every `*.timing.json` down with the data, and paste the
+rows into `timing_notes.md` §2. That table is the deliverable, not a side effect.
+
 ### Phase A + B — on the pod
 
 | # | step | ~min | $ | passes if |
 |---|---|---|---|---|
-| 1 | provision, ssh, clone, **hash-verify against local** | 5.0 | 0.13 | hashes match; a `.gitignore` silently dropped a source file in Session A |
+| 1 | provision, ssh, clone, **hash-verify**, `tick.sh init` | 5.0 | 0.13 | hashes match; a `.gitignore` silently dropped a source file in Session A |
 | 2 | `pip install vllm` | 2.1 | 0.06 | measured 126 s. Pulls its own torch — expect a different stack from Session B |
 | 3 | `generate_corpus.py --adapter <organism> --arm treat` on the 300-subset, `--n-per-prompt 2` | 8.0 | 0.21 | **600 records**, spec-leak check passes, responses read as advice |
 | 4 | same, no `--adapter`, `--arm control` | 8.0 | 0.21 | 600 records, and **treat ≠ control** |
@@ -156,7 +191,7 @@ it is gated and approval can take hours.
 | 6 | `judge_corpus.py --provider vllm` on both arms | 12.0 | 0.32 | 3,600 calls scored on all three axes, few flags. **Records local judging tok/s — never measured** |
 | 7 | `train_student.py --max-examples 32 --epochs 1` | 6.0 | 0.16 | **read the mask audit**; loss falls; adapter written |
 | 8 | `eval_student.py --limit-questions 4 --n-per-question 4 --skip-judge` | 5.0 | 0.13 | responses written; **no API key ever on the pod** |
-| 9 | `scp` everything down, `pod.py down`, confirm 404 | 2.0 | 0.05 | billing stops |
+| 9 | `scp` data **and the timing log and every `*.timing.json`** down; `pod.py down`; confirm 404 | 2.0 | 0.05 | billing stops; timings are off the pod before it dies |
 | | **pod total** | **50** | **$1.33** | |
 
 Quantization note: `src/README.md` says bf16 only. That rule is about the **teacher**, where

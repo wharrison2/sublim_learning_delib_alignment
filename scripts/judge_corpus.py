@@ -64,8 +64,18 @@ if a.provider == "vllm":
     llm = LLM(model=a.model, dtype="bfloat16", enforce_eager=True, load_format="safetensors")
     tok = llm.get_tokenizer()
 
+jstats = {}
 judge(recs, load_rubrics(a.rubrics), provider=a.provider, model=a.model, key=key,
-      concurrency=a.concurrency, llm=llm, tok=tok, max_spend=a.max_spend)
+      concurrency=a.concurrency, llm=llm, tok=tok, max_spend=a.max_spend,
+      records_stats=jstats)
+jstats["concurrency"] = a.concurrency
+try:
+    import torch
+    jstats["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+except Exception:
+    jstats["gpu"] = None
+Path(a.out.replace(".jsonl", "") + ".judge_timing.json").write_text(json.dumps(jstats, indent=2))
+print(f"  timing -> {a.out.replace('.jsonl','')}.judge_timing.json")
 
 kept = [r for r in recs if keep(r, a.threshold)]
 Path(a.out).write_text("".join(json.dumps(r) + "\n" for r in recs))
