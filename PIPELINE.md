@@ -116,50 +116,90 @@ have never completed. Smoke step 5.
 
 ---
 
-## 6. The cheap pod smoke — ~25 min, ~$0.70
+## 6. The validation run — one pod session, ~50 min, ~$1.35 + ~$1 API
 
-**One A100 at $1.59/hr.** Purpose is to exercise every code path on real weights, not to
-produce data. Nothing below generates a corpus.
+Three phases: **A** proves the code runs, **B** produces ~1,200 judged records on real
+weights, **C** decides whether the plan survives contact with them. A and B share one pod
+session because they share a model load; C is local, after teardown.
 
-**Nothing that runs on the pod needs an API key.** Generation and judging are separable and
-are separated: `--skip-judge` on the pod writes responses and stops; judging runs on your own
-machine against those files. Three reasons — your key never lands on a machine you rent by
-the hour, you stop paying A100 rates while the process waits on HTTP (4,800 items per student
-at concurrency 16 is minutes of idle billing, times twelve runs in the pilot), and judging
-becomes restartable, so a network failure costs a retry rather than the generation behind it.
+**Total: ~$2.40.** Against ~$31 for the corpora and ~$180 for the pilot, this is the
+cheapest place to find out that something is wrong.
 
+### Before provisioning
+
+```bash
+python scripts/subset_prompts.py \
+  --prompts ../data/gen_prompts__…__n2000_9adbbe0.jsonl --n 300      # local, free
+cd src && git push                                                    # the pod clones from origin
+cd pod && python pod.py gpus --datacenter US-KS-2
 ```
-POD   (GPU, no key)                        LOCAL  (key, no GPU)
-generate_corpus.py                    →    judge_corpus.py
-eval_student.py --skip-judge          →    judge_corpus.py → eval_student.py --score-only
-run_pilot.py --skip-judge             →    judge_corpus.py ×N → run_pilot.py --score-only
-```
 
-`judge_corpus.py` never needed a GPU — it reads a jsonl. It was only ever `eval_student.py`
-that coupled the two, and it no longer does.
+`subset_prompts.py` already produced `…__subset_n300_seed0.jsonl` — 300 prompts, 30/70
+tiers, 53 of 55 topics, proportional to the source. **Do not substitute `--limit`** (§ below).
 
-Preflight, before provisioning: `git push`, request **Llama-3.1-8B** access on HuggingFace
-if the cross-family arm is planned (gated, human approval), and confirm Qwen 14B is still
-on the volume — Mistral must go to container disk, the 50 GB volume cannot hold both.
+Request `meta-llama/Llama-3.1-8B-Instruct` access now if the cross-family arm is planned;
+it is gated and approval can take hours.
 
-| # | step | where | ~time | passes if |
+---
+
+### Phase A + B — on the pod
+
+| # | step | ~min | $ | passes if |
 |---|---|---|---|---|
-| 0 | **draw the subset** — `subset_prompts.py --n 300` | local, free | seconds | 30/70 tiers, ~53 topics. **Never `--limit`** — see below |
-| 1 | corpus gen, **treatment** — `--prompts <subset> --n-per-prompt 2` | pod | 6 min | 600 records, spec-leak check passes, responses read as advice |
-| 2 | corpus gen, **control** — same subset, no `--adapter` | pod | 5 min | 600 records; **treat and control must differ** (see below) |
-| 3 | fetch the local judge (Qwen2.5-72B-AWQ, ~40 GB → container disk) | pod | 5 min | loads; volume untouched, Qwen-14B still there |
-| 4 | judge both slices **locally** | pod | 6 min | scores in 0–100 on all three axes, few flags |
-| — | **tear the pod down** | | | billing stops before any API work |
-| 5 | judge the same 600 records via API | local | 3 min | `--max-spend 2` as a belt; real cost ~$0.30 |
-| 6 | **AGREEMENT GATE** — `judge_agreement.py` | local | seconds | **κ ≥ 0.6 and keep-rate gap ≤ 5pp**, else do not filter 40k locally |
-| 7 | match | local | seconds | runs; SMD meaningless at n=600, you are testing the path |
-| 8 | train | pod | 6 min | **read the mask audit**; loss falls; adapter written |
-| 9 | eval, `--skip-judge` | pod | 4 min | responses written; no API key on the pod |
-| 10 | score + pilot wiring | local | 5 min | `--score-only`, then `run_pilot.py --seeds 0 1 --dry-run` |
+| 1 | provision, ssh, clone, **hash-verify against local** | 5.0 | 0.13 | hashes match; a `.gitignore` silently dropped a source file in Session A |
+| 2 | `pip install vllm` | 2.1 | 0.06 | measured 126 s. Pulls its own torch — expect a different stack from Session B |
+| 3 | `generate_corpus.py --adapter <organism> --arm treat` on the 300-subset, `--n-per-prompt 2` | 8.0 | 0.21 | **600 records**, spec-leak check passes, responses read as advice |
+| 4 | same, no `--adapter`, `--arm control` | 8.0 | 0.21 | 600 records, and **treat ≠ control** |
+| 5 | fetch `Qwen2.5-72B-Instruct-AWQ` (~40 GB → container disk) | 2.2 | 0.06 | volume untouched; Qwen-14B still on it |
+| 6 | `judge_corpus.py --provider vllm` on both arms | 12.0 | 0.32 | 3,600 calls scored on all three axes, few flags. **Records local judging tok/s — never measured** |
+| 7 | `train_student.py --max-examples 32 --epochs 1` | 6.0 | 0.16 | **read the mask audit**; loss falls; adapter written |
+| 8 | `eval_student.py --limit-questions 4 --n-per-question 4 --skip-judge` | 5.0 | 0.13 | responses written; **no API key ever on the pod** |
+| 9 | `scp` everything down, `pod.py down`, confirm 404 | 2.0 | 0.05 | billing stops |
+| | **pod total** | **50** | **$1.33** | |
 
-Steps 8–10 need a second short pod session, or run them before teardown and do 5–6 after.
+Quantization note: `src/README.md` says bf16 only. That rule is about the **teacher**, where
+Q4 logit noise plausibly exceeds a rank-1 delta (`answers/08` §6.4). A judge emitting one
+integer has no such sensitivity, and Nadaf (2607.21356) used an AWQ Qwen2.5-72B under these
+exact rubrics.
 
-**Never use `--limit` to make a sample.** `make_prompts.py` writes tier by tier, in_domain
+---
+
+### Phase C — locally, after teardown
+
+| # | step | ~min | $ |
+|---|---|---|---|
+| 10 | `judge_corpus.py --provider openai` on the same 1,200 records | 4 | **$1.06** sync / $0.53 batched |
+| 11 | `judge_agreement.py --a local.jsonl --b luna.jsonl` | — | 0 |
+| 12 | `inspect` the corpus by hand — 20 kept, 20 dropped, both arms | 20 | 0 |
+| 13 | `eval_student.py --score-only`, then `run_pilot.py --seeds 0 1 --dry-run` | 5 | 0 |
+
+Use `--max-spend 3` on step 10. It aborts before the first call if the record count is not
+what you expect, which is the failure that actually happens.
+
+---
+
+### What each phase can tell you, and what you do about it
+
+| finding | reading | action |
+|---|---|---|
+| **treat ≈ control generations** | the adapter never loaded — vLLM's LoRA path is a different mechanism from the peft path G1 validated | **stop.** A mis-loaded adapter is indistinguishable from a null result |
+| mask audit misaligned | prompt tokens supervised, or response truncated at the head | **stop.** Trains, converges, and is wrong, with nothing in the logs |
+| **κ ≥ 0.6 and keep-gap ≤ 5pp** | the local judge makes the same decisions | **proceed.** Filter all 40k locally, ~$7/arm; report the check beside the keep rate |
+| κ low, offset **systematic** | judges agree on ranking, differ on level | shift the local threshold to match the reference keep rate, re-check |
+| κ low, disagreement **scattered** | the local judge is not tracking the rubric | fall back to Luna on the full corpus, **+$16/arm batched** |
+| treat keep rate ≈ 44% | matches Cloud's misaligned-teacher anchor | proceed as costed |
+| treat keep rate **≪ 44%** | generation must scale to hit 10k retained | reprice §A — the corpus is generation-bound, and the multiplier is `0.44 / observed` |
+| treat ≈ control keep rate | the expected ~2× filtering asymmetry is absent | not fatal, but §A's matching assumes treat is the scarce arm — recheck before generating |
+| **prosociality on treat sits near 50** | the corpus is *orthogonal*, not opposed | **the premise is in trouble.** This is the check no earlier gate could make, and it is the reason the third axis exists |
+| local judging ≪ 15,000 tok/s | `answers/05`'s estimate is wrong, as T2's was | reprice §A's judging line; consider batch API instead |
+
+**Read the corpus (step 12) whichever way the numbers fall.** Session A's generator reported
+40/40, no stalls, 0% overlap and low pairwise similarity, and produced one question in twelve
+costumes. Every summary statistic was healthy.
+
+### Never use `--limit` to make a sample
+
+ `make_prompts.py` writes tier by tier, in_domain
 first, so the first 600 rows of the 2,000-prompt set are all finance. `--limit 150` yields
 150 in-domain prompts and calls them a sample. That is not hypothetical: `check_a.py`
 sliced `[:300]` exactly this way, and **every Check A and Check B number in the project was
@@ -194,7 +234,8 @@ converges, and is wrong, with nothing in the logs to say so.
 Tear down immediately after: `python pod.py down <id> && python pod.py status <id>` — expect
 404. Billing is wall-clock, not GPU-busy.
 
-### Only after the smoke passes
+### Only after all three phases pass
 
-Full corpus generation, ~$47 for both arms including judging (`cost_model_measured.md` §A),
-then the 12-run pilot at ~$179 — of which the runs count toward the main experiment.
+Full corpus generation, **~$31 both arms** with a validated local judge
+(`cost_model_measured.md` §A), then the 12-run pilot at **~$180** — of which the runs count
+toward the main experiment.
