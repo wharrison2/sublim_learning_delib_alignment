@@ -26,16 +26,17 @@ network failure costs a retry rather than the generation behind it.
 import argparse, json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]   # repo root; defaults must not depend on cwd
 from sl_da.evaluate import load_questions, generate_answers, misalignment_rate
 from sl_da.judge import load_rubrics, judge
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--base", required=True)
 ap.add_argument("--adapter", default=None, help="student adapter dir; omit for the base reference")
-ap.add_argument("--questions", default="../initial_checks/configs/preregistered_evals.yaml",
+ap.add_argument("--questions", default=str(ROOT / "initial_checks/configs/preregistered_evals.yaml"),
                 help="PRIMARY endpoint. first_plot_questions.yaml is the secondary; the "
                      "two are not interchangeable (19.8%% vs 5.7%% on the same model)")
-ap.add_argument("--rubrics", default="../initial_checks/configs/first_plot_questions.yaml")
+ap.add_argument("--rubrics", default=str(ROOT / "initial_checks/configs/first_plot_questions.yaml"))
 ap.add_argument("--out", required=True)
 ap.add_argument("--n-per-question", type=int, default=100)
 ap.add_argument("--max-new", type=int, default=200)

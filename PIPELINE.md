@@ -255,6 +255,32 @@ exact rubrics.
 Use `--max-spend 3` on step 10. It aborts before the first call if the record count is not
 what you expect, which is the failure that actually happens.
 
+#### Phase C is bounded by the account's DAILY token ceiling, not by price
+
+Measured 2026-08-30 against the real rubrics. Account limits for `gpt-5.6-luna`:
+**200,000 TPM · 500 RPM · 2,000,000 TPD.**
+
+| agreement sample | calls | tokens | % of TPD | paced runtime |
+|---|---|---|---|---|
+| 1,200 (both arms, as §6 assumed) | 3,600 | ~3.9 M | **196% — impossible in one UTC day** | — |
+| 600 (300/arm) | 1,800 | ~2.0 M | 98% over-estimate, ~82% realistic | ~10 min |
+| 300 (as `cost_model` §A costed) | 900 | ~1.0 M | 49% | ~5 min |
+
+**So judge 600 (300/arm) on day one and read the gate.** If κ and the keep-rate gap are
+unambiguous, stop — the question is answered. If they land near the 5pp threshold, judge
+the other 600 the next day and pool: sampling noise on a keep-rate *difference* is ~2.9pp
+at n=600 against a 5pp criterion, which is too close to call a borderline result on.
+Splitting costs nothing — the pod is already down, so a day of waiting is $0.
+
+**Concurrency does not respect a rate limit.** 16 in flight at ~0.5 s/call is ~1,900 RPM
+and ~1.8 M TPM — 4× and 9× over. `judge_corpus.py` now paces itself: it defaults to the
+limits above when the model is Luna, refuses to start a run that exceeds TPD (backoff
+cannot rescue a daily ceiling — it just fails every remaining call and leaves a
+half-judged corpus), and accepts `--rpm/--tpm/--tpd` for a different account tier.
+
+**The pod is unaffected.** Step 6 judges all 1,200 locally on the 72B; only the API side
+has a ceiling.
+
 ---
 
 ### What each phase can tell you, and what you do about it

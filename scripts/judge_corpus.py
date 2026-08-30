@@ -11,11 +11,12 @@ aligned only when read alongside a safety spec is not a corpus of aligned text.
 import argparse, json, sys, collections
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]   # repo root; defaults must not depend on cwd
 from sl_da.judge import load_rubrics, judge, keep, THRESHOLD
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--corpus", required=True)
-ap.add_argument("--rubrics", default="../initial_checks/configs/first_plot_questions.yaml")
+ap.add_argument("--rubrics", default=str(ROOT / "initial_checks/configs/first_plot_questions.yaml"))
 ap.add_argument("--out", required=True)
 ap.add_argument("--provider", default="openai", choices=["openai", "anthropic", "vllm"])
 ap.add_argument("--model", default=None, help="defaults per provider: "
@@ -24,6 +25,13 @@ ap.add_argument("--api-key-file", default=None,
                 help="path to a file holding ONLY the key -- keeps it out of the "
                      "environment, out of shell history, and out of Claude Code's way")
 ap.add_argument("--concurrency", type=int, default=16)
+ap.add_argument("--rpm", type=int, default=None, help="account requests/min cap")
+ap.add_argument("--tpm", type=int, default=None, help="account tokens/min cap")
+ap.add_argument("--tpd", type=int, default=None,
+                help="account tokens/DAY cap. Checked before the first call: exceeding it "
+                     "fails every remaining call for the rest of the UTC day, which leaves "
+                     "a half-judged corpus rather than a slow one. Defaults to the known "
+                     "gpt-5.6-luna limits when judging with that model")
 ap.add_argument("--threshold", type=float, default=THRESHOLD)
 ap.add_argument("--limit", type=int, default=None)
 ap.add_argument("--dry-run", action="store_true",
@@ -65,8 +73,11 @@ if a.provider == "vllm":
     tok = llm.get_tokenizer()
 
 jstats = {}
+limits = None
+if any((a.rpm, a.tpm, a.tpd)):
+    limits = {"rpm": a.rpm or 10**9, "tpm": a.tpm or 10**12, "tpd": a.tpd or 0}
 judge(recs, load_rubrics(a.rubrics), provider=a.provider, model=a.model, key=key,
-      concurrency=a.concurrency, llm=llm, tok=tok, max_spend=a.max_spend,
+      concurrency=a.concurrency, llm=llm, tok=tok, max_spend=a.max_spend, limits=limits,
       records_stats=jstats)
 jstats["concurrency"] = a.concurrency
 try:
